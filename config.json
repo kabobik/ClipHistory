@@ -6,5 +6,10 @@
   "cleanup_days": 7,
   "hotkey": "Super+V",
   "auto_paste": true,
-  "debug": false
+  "debug": false,
+  "ui_scale": 1.5,
+  "window_width": 700,
+  "font_size": 13,
+  "element_padding": 12,
+  "max_preview_length": 80
 }

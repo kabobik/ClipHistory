@@ -10,8 +10,14 @@ import json
 import sqlite3
 import os
 import hashlib
+import threading
 from pathlib import Path
 from datetime import datetime, timedelta
+try:
+    from evdev import InputDevice, ecodes, list_devices
+    EVDEV_AVAILABLE = True
+except ImportError:
+    EVDEV_AVAILABLE = False
 
 # Приоритет MIME типов (от высшего к низшему)
 MIME_PRIORITY = [
@@ -239,11 +245,82 @@ class ClipHistory:
         
         self.save_item(mime_type, content, preview)
     
+    def monitor_hotkey(self):
+        """Мониторинг горячей клавиши через evdev"""
+        if not EVDEV_AVAILABLE:
+            return
+        
+        try:
+            # Находим все клавиатуры
+            devices = []
+            for path in list_devices():
+                dev = InputDevice(path)
+                caps = dev.capabilities()
+                if ecodes.EV_KEY in caps and ecodes.KEY_LEFTMETA in caps.get(ecodes.EV_KEY, []):
+                    devices.append(dev)
+            
+            if not devices:
+                if self.config.get('debug'):
+                    print("⚠️  Клавиатуры не найдены для hotkey")
+                return
+            
+            if self.config.get('debug'):
+                print(f"⌨️  Мониторинг {len(devices)} клавиатур для Super+V")
+            
+            super_pressed = False
+            v_pressed = False
+            
+            # Читаем события от всех клавиатур
+            import selectors
+            sel = selectors.DefaultSelector()
+            for dev in devices:
+                sel.register(dev, selectors.EVENT_READ)
+            
+            while True:
+                for key, _ in sel.select(timeout=0.1):
+                    dev = key.fileobj
+                    for event in dev.read():
+                        if event.type == ecodes.EV_KEY:
+                            # Super (Win) key
+                            if event.code in [ecodes.KEY_LEFTMETA, ecodes.KEY_RIGHTMETA]:
+                                super_pressed = (event.value == 1)
+                            # V key
+                            elif event.code == ecodes.KEY_V:
+                                v_pressed = (event.value == 1)
+                                
+                                # Если Super+V нажаты вместе
+                                if super_pressed and v_pressed:
+                                    if self.config.get('debug'):
+                                        print("🔥 Super+V обнаружено!")
+                                    # Запускаем UI в отдельном процессе
+                                    subprocess.Popen([
+                                        'python3',
+                                        str(Path(__file__).parent / 'clipshow.py')
+                                    ])
+                                    v_pressed = False  # Сброс чтобы не запускать повторно
+        except Exception as e:
+            if self.config.get('debug'):
+                print(f"⚠️  Ошибка мониторинга hotkey: {e}")
+    
     def run(self):
         """Основной цикл демона"""
         print("🚀 ClipHistory запущен")
         print(f"📁 Кэш: {self.cache_dir}")
         print(f"⏱️  Проверка каждые {self.config['check_interval']}s")
+        
+        # Запускаем мониторинг hotkey в отдельном потоке
+        if EVDEV_AVAILABLE and os.geteuid() == 0:
+            print(f"⌨️  Горячая клавиша: {self.config.get('hotkey', 'Super+V')}")
+            hotkey_thread = threading.Thread(target=self.monitor_hotkey, daemon=True)
+            hotkey_thread.start()
+        else:
+            if not EVDEV_AVAILABLE:
+                print("⚠️  evdev не установлен - горячая клавиша недоступна")
+                print("    Установите: pip install evdev")
+            else:
+                print("⚠️  Нужен root для горячей клавиши - используйте системные настройки")
+                print(f"    Или запустите: sudo python3 {__file__}")
+        
         print("💡 Нажмите Ctrl+C для выхода")
         print("-" * 50)
         
