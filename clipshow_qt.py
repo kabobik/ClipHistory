@@ -4,8 +4,9 @@ ClipHistory Qt UI - современный дизайн как в Windows
 """
 
 from PyQt5.QtWidgets import (QApplication, QWidget, QListWidget, QListWidgetItem,
-                             QVBoxLayout, QHBoxLayout, QLabel, QFrame, QPushButton, QFileDialog)
-from PyQt5.QtCore import Qt, QSize, pyqtSignal, QByteArray
+                             QVBoxLayout, QHBoxLayout, QLabel, QFrame, QPushButton, 
+                             QFileDialog, QSystemTrayIcon, QMenu, QAction)
+from PyQt5.QtCore import Qt, QSize, pyqtSignal, QByteArray, QTimer
 from PyQt5.QtGui import QPixmap, QIcon, QPalette, QColor, QFont, QPainter
 from PyQt5.QtSvg import QSvgRenderer
 
@@ -13,6 +14,8 @@ import subprocess
 import sqlite3
 import json
 import sys
+import os
+import shutil
 from pathlib import Path
 from PIL import Image
 
@@ -276,6 +279,13 @@ class ClipHistoryWindow(QWidget):
     
     def __init__(self):
         super().__init__()
+        
+        # Проверка единственного экземпляра
+        self.lock_file = Path.home() / '.cache' / 'cliphistory' / '.ui.lock'
+        if not self.acquire_lock():
+            print("UI уже запущен")
+            sys.exit(0)
+        
         self.cache_dir = Path.home() / '.cache' / 'cliphistory'
         self.db_path = self.cache_dir / 'history.db'
         self.config = self.load_config()
@@ -293,6 +303,38 @@ class ClipHistoryWindow(QWidget):
         self.init_ui()
         self.load_history()
         self.position_near_cursor()
+        self.setup_auto_refresh()
+    
+    def acquire_lock(self):
+        """Проверка что UI не запущен"""
+        try:
+            self.lock_file.parent.mkdir(parents=True, exist_ok=True)
+            if self.lock_file.exists():
+                # Проверяем что процесс с PID из файла существует
+                try:
+                    with open(self.lock_file) as f:
+                        pid = int(f.read().strip())
+                    # Проверяем существование процесса
+                    os.kill(pid, 0)
+                    return False  # Процесс существует
+                except (ProcessLookupError, ValueError):
+                    # Процесс не существует, удаляем старый lock
+                    self.lock_file.unlink()
+            
+            # Создаем lock файл с текущим PID
+            with open(self.lock_file, 'w') as f:
+                f.write(str(os.getpid()))
+            return True
+        except Exception:
+            return True  # В случае ошибки разрешаем запуск
+    
+    def release_lock(self):
+        """Освободить lock"""
+        try:
+            if self.lock_file.exists():
+                self.lock_file.unlink()
+        except Exception:
+            pass
     
     def load_config(self):
         """Загрузка конфигурации"""
@@ -334,6 +376,74 @@ class ClipHistoryWindow(QWidget):
         renderer.render(painter)
         painter.end()
         return pixmap
+    
+    def setup_tray_icon(self):
+        """Создать иконку в системном трее"""
+        if not QSystemTrayIcon.isSystemTrayAvailable():
+            return
+        
+        # Создаем иконку для трея
+        tray_icon_pixmap = self.create_svg_icon('clipboard', 64, '#ffffff' if self.is_dark else '#000000')
+        
+        self.tray_icon = QSystemTrayIcon(QIcon(tray_icon_pixmap), self)
+        self.tray_icon.setToolTip('ClipHistory - История буфера обмена')
+        
+        # Создаем меню трея
+        tray_menu = QMenu()
+        
+        show_action = QAction('Показать историю', self)
+        show_action.triggered.connect(self.show)
+        tray_menu.addAction(show_action)
+        
+        tray_menu.addSeparator()
+        
+        quit_action = QAction('Выход', self)
+        quit_action.triggered.connect(self.close)
+        tray_menu.addAction(quit_action)
+        
+        self.tray_icon.setContextMenu(tray_menu)
+        self.tray_icon.activated.connect(self.on_tray_activated)
+        self.tray_icon.show()
+    
+    def on_tray_activated(self, reason):
+        """Обработка клика по иконке в трее"""
+        if reason == QSystemTrayIcon.Trigger:  # Левый клик
+            if self.isVisible():
+                self.hide()
+            else:
+                self.show()
+                self.position_near_cursor()
+    
+    def setup_auto_refresh(self):
+        """Настроить автообновление истории"""
+        self.last_item_count = 0
+        self.refresh_timer = QTimer(self)
+        self.refresh_timer.timeout.connect(self.check_for_updates)
+        self.refresh_timer.start(1000)  # Проверка каждую секунду
+    
+    def check_for_updates(self):
+        """Проверить новые элементы в истории"""
+        if not self.isVisible():
+            return
+        
+        try:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('SELECT COUNT(*) FROM items')
+            current_count = cursor.fetchone()[0]
+            conn.close()
+            
+            if self.last_item_count == 0:
+                self.last_item_count = current_count
+            elif current_count != self.last_item_count:
+                # Есть новые элементы - обновляем список
+                self.list_widget.setUpdatesEnabled(False)
+                self.list_widget.clear()
+                self.load_history()
+                self.list_widget.setUpdatesEnabled(True)
+                self.last_item_count = current_count
+        except Exception:
+            pass
     
     def init_ui(self):
         """Инициализация UI"""
@@ -456,7 +566,7 @@ class ClipHistoryWindow(QWidget):
                 }
                 QScrollBar::handle:vertical {
                     background: #555555;
-                    border-radius: 14px;
+                    border-radius: 0px;
                     min-height: 30px;
                 }
                 QScrollBar::handle:vertical:hover {
@@ -492,7 +602,7 @@ class ClipHistoryWindow(QWidget):
                 }
                 QScrollBar::handle:vertical {
                     background: #cccccc;
-                    border-radius: 14px;
+                    border-radius: 0px;
                     min-height: 30px;
                 }
                 QScrollBar::handle:vertical:hover {
@@ -528,7 +638,7 @@ class ClipHistoryWindow(QWidget):
         self.setGraphicsEffect(None)  # Qt не поддерживает тени напрямую для frameless
     
     def position_near_cursor(self):
-        """Позиционировать рядом с курсором с проверкой границ экрана"""
+        """Позиционировать рядом с курсором с умной проверкой границ"""
         try:
             # Сохраняем ID активного окна для возврата фокуса
             result = subprocess.run(
@@ -553,21 +663,32 @@ class ClipHistoryWindow(QWidget):
                 if '=' in line:
                     key, val = line.split('=')
                     pos[key] = int(val)
-            x, y = pos.get('X', 100), pos.get('Y', 100)
             
-            # Центрируем относительно курсора
-            x = x - self.width() // 2
-            y = y - self.height() // 2
+            cursor_x, cursor_y = pos.get('X', screen_width // 2), pos.get('Y', screen_height // 2)
             
-            # Проверяем границы экрана
-            if x < 0:
-                x = 10
-            if y < 0:
-                y = 10
-            if x + self.width() > screen_width:
-                x = screen_width - self.width() - 10
-            if y + self.height() > screen_height:
-                y = screen_height - self.height() - 10
+            margin = 20  # Отступ от края экрана и от курсора
+            
+            # Пробуем разместить справа-снизу от курсора (по умолчанию)
+            x = cursor_x + margin
+            y = cursor_y + margin
+            
+            # Проверяем правую границу - если не влезает, размещаем СЛЕВА
+            if x + self.width() > screen_width - margin:
+                x = cursor_x - self.width() - margin
+            
+            # Проверяем нижнюю границу - если не влезает, размещаем СВЕРХУ
+            if y + self.height() > screen_height - margin:
+                y = cursor_y - self.height() - margin
+            
+            # Если всё равно вылезает за границы (курсор в углу) - прижимаем к краям
+            if x < margin:
+                x = margin
+            if y < margin:
+                y = margin
+            if x + self.width() > screen_width - margin:
+                x = screen_width - self.width() - margin
+            if y + self.height() > screen_height - margin:
+                y = screen_height - self.height() - margin
             
             self.move(x, y)
         except Exception:
@@ -657,6 +778,11 @@ class ClipHistoryWindow(QWidget):
         """Обработка клавиш"""
         if event.key() == Qt.Key_Escape:
             self.close()
+    
+    def closeEvent(self, event):
+        """Обработка закрытия окна"""
+        self.release_lock()
+        event.accept()
     
     def mousePressEvent(self, event):
         """Начало перетаскивания окна - только при клике на заголовок"""

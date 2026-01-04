@@ -1,7 +1,35 @@
+# Python
 __pycache__/
-*.pyc
-*.pyo
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+*.egg
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# Сборка
+build/
+*.deb
+*.tar.gz
+*.tar.gz.sha256
+
+# Временные файлы
+nohup.out
+*.log
+*.tmp
+
+# Кэш и данные приложения
+.cache/
 *.db
 *.db-journal
-test_*.py
-.vscode/
+.ui.lock
+
+# Системные файлы
+.DS_Store
+Thumbs.db
+*~
