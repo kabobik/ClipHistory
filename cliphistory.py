@@ -291,6 +291,15 @@ class ClipHistory:
             
             while True:
                 current_time = time.time()
+                
+                # Проверяем статус UI процесса перед обработкой событий
+                if ui_process is not None and ui_process.poll() is not None:
+                    # Процесс завершен, сбрасываем флаги
+                    if self.config.get('debug'):
+                        print("🔄 UI процесс завершен, сбрасываем флаги")
+                    ui_process = None
+                    ui_launched = False
+                
                 for key, _ in sel.select(timeout=0.1):
                     dev = key.fileobj
                     for event in dev.read():
@@ -302,13 +311,13 @@ class ClipHistory:
                                     ui_launched = False  # Сброс при отпускании Super
                             # V key
                             elif event.code == ecodes.KEY_V:
-                                # Блокируем 'v' если еще не прошла секунда
+                                v_pressed = (event.value == 1)
+                                
+                                # Блокируем 'v' если недавно запустили UI
                                 if current_time < block_v_until:
                                     if self.config.get('debug'):
-                                        print(f"🚫 Блокировка 'v' ({block_v_until - current_time:.2f}s осталось)")
-                                    continue  # Игнорируем событие
-                                
-                                v_pressed = (event.value == 1)
+                                        print(f"🚫 Блокируем 'v' ({block_v_until - current_time:.2f}s осталось)")
+                                    continue
                                 
                                 # Если Super+V нажаты вместе и UI еще не запущен
                                 if super_pressed and v_pressed and not ui_launched:
@@ -331,6 +340,17 @@ class ClipHistory:
                                             'python3',
                                             str(Path(__file__).parent / 'clipshow_qt.py')
                                         ])
+                                        
+                                        # Захватываем клавиатуру для блокировки 'v'
+                                        try:
+                                            for device in devices:
+                                                device.grab()
+                                            time.sleep(0.15)  # Даем время UI открыться
+                                            for device in devices:
+                                                device.ungrab()
+                                        except Exception as grab_err:
+                                            if self.config.get('debug'):
+                                                print(f"⚠️  Не удалось заблокировать клавиатуру: {grab_err}")
         except Exception as e:
             if self.config.get('debug'):
                 print(f"⚠️  Ошибка мониторинга hotkey: {e}")

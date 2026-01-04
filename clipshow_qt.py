@@ -33,9 +33,9 @@ class ClipboardItemWidget(QFrame):
         self.setFixedHeight(240)
         self.setCursor(Qt.PointingHandCursor)
         
-        # Фиксируем размер чтобы не менялся
+        # Фиксируем только высоту, ширина адаптивная
         from PyQt5.QtWidgets import QSizePolicy
-        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         
         # Layout
         layout = QHBoxLayout(self)
@@ -283,6 +283,13 @@ class ClipHistoryWindow(QWidget):
         self.drag_position = None
         self.prev_window_id = None
         
+        # Константы размеров
+        self.scale = self.config.get('ui_scale', 1.0)
+        self.scrollbar_width = int(28 * self.scale)
+        self.content_width = int(595 * self.scale)  # Ширина контента
+        self.window_width = self.content_width + self.scrollbar_width  # Общая ширина окна
+        self.window_height = int(700 * self.scale)
+        
         self.init_ui()
         self.load_history()
         self.position_near_cursor()
@@ -331,11 +338,10 @@ class ClipHistoryWindow(QWidget):
     def init_ui(self):
         """Инициализация UI"""
         self.setWindowTitle("История буфера обмена")
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Popup)
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
         
-        scale = self.config.get('ui_scale', 1.0)
-        # Ширина 595 + 28 (скроллбар) = 623
-        self.setFixedSize(int(623 * scale), int(700 * scale))
+        # Используем переменные размеров из __init__
+        self.setFixedSize(self.window_width, self.window_height)
         
         # Главный layout
         main_layout = QVBoxLayout(self)
@@ -344,29 +350,29 @@ class ClipHistoryWindow(QWidget):
         
         # Заголовок
         header = QFrame()
-        header.setFixedHeight(int(80 * scale))
+        header.setFixedHeight(int(80 * self.scale))
         header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(int(20 * scale), 0, int(20 * scale), 0)
-        header_layout.setSpacing(int(12 * scale))
+        header_layout.setContentsMargins(int(20 * self.scale), 0, int(20 * self.scale), 0)
+        header_layout.setSpacing(int(12 * self.scale))
         
         # Иконка приложения
         icon_color = '#ffffff' if self.is_dark else '#000000'
         app_icon = QLabel()
-        app_icon.setPixmap(self.create_svg_icon('clipboard', int(48 * scale), icon_color))
-        app_icon.setFixedSize(int(48 * scale), int(48 * scale))
+        app_icon.setPixmap(self.create_svg_icon('clipboard', int(48 * self.scale), icon_color))
+        app_icon.setFixedSize(int(48 * self.scale), int(48 * self.scale))
         header_layout.addWidget(app_icon)
         
         title = QLabel("История буфера обмена")
-        title.setFont(QFont('Sans', int(12 * scale), QFont.Bold))
+        title.setFont(QFont('Sans', int(12 * self.scale), QFont.Bold))
         title.setAlignment(Qt.AlignVCenter)
         header_layout.addWidget(title)
         header_layout.addStretch()
         
         # Кнопка закрытия
         close_btn = QPushButton()
-        close_btn.setFixedSize(int(48 * scale), int(48 * scale))
-        close_btn.setIcon(QIcon(self.create_svg_icon('close', int(32 * scale), icon_color)))
-        close_btn.setIconSize(QSize(int(32 * scale), int(32 * scale)))
+        close_btn.setFixedSize(int(48 * self.scale), int(48 * self.scale))
+        close_btn.setIcon(QIcon(self.create_svg_icon('close', int(32 * self.scale), icon_color)))
+        close_btn.setIconSize(QSize(int(32 * self.scale), int(32 * self.scale)))
         close_btn.setCursor(Qt.PointingHandCursor)
         close_btn.clicked.connect(self.close)
         
@@ -423,7 +429,7 @@ class ClipHistoryWindow(QWidget):
         # Список элементов
         self.list_widget = QListWidget()
         self.list_widget.setFrameStyle(QFrame.NoFrame)
-        self.list_widget.setSpacing(int(4 * scale))
+        self.list_widget.setSpacing(int(4 * self.scale))
         self.list_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.list_widget.itemClicked.connect(self.on_item_clicked)
         
@@ -432,8 +438,7 @@ class ClipHistoryWindow(QWidget):
                 QListWidget {
                     background-color: #2b2b2b;
                     border: none;
-                    padding: 8px;
-                    padding-right: 4px;
+                    padding: 0px;
                 }
                 QListWidget::item {
                     background-color: transparent;
@@ -469,8 +474,7 @@ class ClipHistoryWindow(QWidget):
                 QListWidget {
                     background-color: #ffffff;
                     border: none;
-                    padding: 8px;
-                    padding-right: 4px;
+                    padding: 0px;
                 }
                 QListWidget::item {
                     background-color: transparent;
@@ -586,10 +590,13 @@ class ClipHistoryWindow(QWidget):
         conn.close()
         
         for item_id, mime_type, content_path, preview, pinned in items:
-            widget = ClipboardItemWidget(item_id, mime_type, content_path, preview[:150], self.is_dark, pinned, self)
+            widget = ClipboardItemWidget(item_id, mime_type, content_path, preview[:150], 
+                                        self.is_dark, pinned, parent_window=self)
+            # Устанавливаем максимальную ширину = ширина окна без скроллбара
+            widget.setMaximumWidth(self.content_width)
             
             item = QListWidgetItem(self.list_widget)
-            item.setSizeHint(QSize(self.list_widget.width() - 20, 240))
+            item.setSizeHint(QSize(self.content_width, 240))
             item.setData(Qt.UserRole, (item_id, mime_type, content_path, preview))
             
             self.list_widget.addItem(item)
