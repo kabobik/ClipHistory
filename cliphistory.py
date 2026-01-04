@@ -78,9 +78,18 @@ class ClipHistory:
                 mime_type TEXT NOT NULL,
                 content_path TEXT,
                 preview TEXT,
-                hash TEXT UNIQUE
+                hash TEXT UNIQUE,
+                pinned INTEGER DEFAULT 0
             )
         ''')
+        
+        # Миграция: добавляем поле pinned если его нет
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(items)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if 'pinned' not in columns:
+            cursor.execute('ALTER TABLE items ADD COLUMN pinned INTEGER DEFAULT 0')
+        
         conn.commit()
         conn.close()
         
@@ -199,16 +208,16 @@ class ClipHistory:
             cursor.execute('''
                 DELETE FROM items WHERE id IN (
                     SELECT id FROM items 
-                    WHERE mime_type LIKE ? 
+                    WHERE mime_type LIKE ? AND pinned = 0
                     ORDER BY timestamp DESC 
                     LIMIT -1 OFFSET ?
                 )
             ''', (f'{mime_prefix}%', limits[limit]))
         
-        # Удаляем файлы старше N дней
+        # Удаляем файлы старше N дней (кроме закрепленных)
         cutoff = datetime.now() - timedelta(days=self.config['cleanup_days'])
         cursor.execute(
-            'SELECT content_path FROM items WHERE timestamp < ? AND content_path IS NOT NULL',
+            'SELECT content_path FROM items WHERE timestamp < ? AND content_path IS NOT NULL AND pinned = 0',
             (cutoff,)
         )
         for (path,) in cursor.fetchall():
@@ -217,7 +226,7 @@ class ClipHistory:
             except Exception:
                 pass
         
-        cursor.execute('DELETE FROM items WHERE timestamp < ?', (cutoff,))
+        cursor.execute('DELETE FROM items WHERE timestamp < ? AND pinned = 0', (cutoff,))
         conn.commit()
         conn.close()
     
@@ -269,6 +278,10 @@ class ClipHistory:
             
             super_pressed = False
             v_pressed = False
+            ui_launched = False
+            last_launch_time = 0
+            block_v_until = 0  # Блокировка клавиши 'v' до этого времени
+            ui_process = None  # Процесс UI окна
             
             # Читаем события от всех клавиатур
             import selectors
@@ -277,6 +290,7 @@ class ClipHistory:
                 sel.register(dev, selectors.EVENT_READ)
             
             while True:
+                current_time = time.time()
                 for key, _ in sel.select(timeout=0.1):
                     dev = key.fileobj
                     for event in dev.read():
@@ -284,20 +298,39 @@ class ClipHistory:
                             # Super (Win) key
                             if event.code in [ecodes.KEY_LEFTMETA, ecodes.KEY_RIGHTMETA]:
                                 super_pressed = (event.value == 1)
+                                if not super_pressed:
+                                    ui_launched = False  # Сброс при отпускании Super
                             # V key
                             elif event.code == ecodes.KEY_V:
+                                # Блокируем 'v' если еще не прошла секунда
+                                if current_time < block_v_until:
+                                    if self.config.get('debug'):
+                                        print(f"🚫 Блокировка 'v' ({block_v_until - current_time:.2f}s осталось)")
+                                    continue  # Игнорируем событие
+                                
                                 v_pressed = (event.value == 1)
                                 
-                                # Если Super+V нажаты вместе
-                                if super_pressed and v_pressed:
-                                    if self.config.get('debug'):
-                                        print("🔥 Super+V обнаружено!")
-                                    # Запускаем UI в отдельном процессе
-                                    subprocess.Popen([
-                                        'python3',
-                                        str(Path(__file__).parent / 'clipshow.py')
-                                    ])
-                                    v_pressed = False  # Сброс чтобы не запускать повторно
+                                # Если Super+V нажаты вместе и UI еще не запущен
+                                if super_pressed and v_pressed and not ui_launched:
+                                    # Проверяем, не запущен ли уже процесс UI
+                                    if ui_process is not None and ui_process.poll() is None:
+                                        # UI процесс уже работает, не запускаем новый
+                                        if self.config.get('debug'):
+                                            print("⏭️  UI уже открыт, пропускаем")
+                                        continue
+                                    
+                                    # Защита от множественного запуска - минимум 1 секунда между запусками
+                                    if current_time - last_launch_time > 1.0:
+                                        if self.config.get('debug'):
+                                            print("🔥 Super+V обнаружено!")
+                                        ui_launched = True
+                                        last_launch_time = current_time
+                                        block_v_until = current_time + 1.0  # Блокируем 'v' на 1 секунду
+                                        # Запускаем Qt UI в отдельном процессе
+                                        ui_process = subprocess.Popen([
+                                            'python3',
+                                            str(Path(__file__).parent / 'clipshow_qt.py')
+                                        ])
         except Exception as e:
             if self.config.get('debug'):
                 print(f"⚠️  Ошибка мониторинга hotkey: {e}")
