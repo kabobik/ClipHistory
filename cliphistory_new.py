@@ -473,8 +473,35 @@ class ClipHistoryDaemon:
         if not PYQT_AVAILABLE or not QSystemTrayIcon.isSystemTrayAvailable():
             return False
         
-        # SVG иконка clipboard
-        svg_data = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="#ffffff" d="M19 3H14.82C14.4 1.84 13.3 1 12 1S9.6 1.84 9.18 3H5C3.9 3 3 3.9 3 5V19C3 20.1 3.9 21 5 21H19C20.1 21 21 20.1 21 19V5C21 3.9 20.1 3 19 3M12 3C12.55 3 13 3.45 13 4S12.55 5 12 5 11 4.55 11 4 11.45 3 12 3M7 7H17V5H19V19H5V5H7V7M7 9V11H17V9H7M7 13V15H17V13H7Z" /></svg>'''
+        # Определяем тему панели через gsettings
+        is_dark_panel = True  # По умолчанию темная
+        try:
+            import subprocess
+            import re
+            result = subprocess.run(
+                ['gsettings', 'get', 'org.cinnamon.desktop.interface', 'gtk-theme'],
+                capture_output=True, text=True, timeout=1
+            )
+            if result.returncode == 0:
+                theme_name = result.stdout.strip().strip("'")
+                theme_path = Path(f'/usr/share/themes/{theme_name}/gtk-3.0/gtk.css')
+                if theme_path.exists():
+                    content = theme_path.read_text()
+                    match = re.search(r'@define-color\s*(?:theme_bg_color|bg_color)\s*#([0-9a-fA-F]{6});', content)
+                    if match:
+                        hex_color = match.group(1)
+                        r, g, b = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+                        is_dark_panel = (r + g + b) / 3 < 128
+        except:
+            pass
+        
+        # Выбираем цвет иконки в зависимости от темы панели
+        icon_color = '#ffffff' if is_dark_panel else '#2b2b2b'
+        
+        # SVG иконка с адаптивным цветом
+        svg_data = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+            <path fill="{icon_color}" d="M19 3H14.82C14.4 1.84 13.3 1 12 1S9.6 1.84 9.18 3H5C3.9 3 3 3.9 3 5V19C3 20.1 3.9 21 5 21H19C20.1 21 21 20.1 21 19V5C21 3.9 20.1 3 19 3M12 3C12.55 3 13 3.45 13 4S12.55 5 12 5 11 4.55 11 4 11.45 3 12 3M7 7H17V5H19V19H5V5H7V7M7 9V11H17V9H7M7 13V15H17V13H7Z" />
+        </svg>'''
         
         renderer = QSvgRenderer(QByteArray(svg_data.encode()))
         pixmap = QPixmap(64, 64)

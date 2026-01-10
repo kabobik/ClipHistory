@@ -33,19 +33,23 @@ class ClipboardItemWidget(QFrame):
         self.parent_window = parent_window
         self.scale = scale
         self.timestamp = timestamp
+        self.element_margin = int(4 * self.scale)  # Отступы элемента
+
+        self.width = 230
         
         self.setFrameStyle(QFrame.NoFrame)
-        self.setFixedHeight(int(115 * self.scale))
         self.setCursor(Qt.PointingHandCursor)
         
-        # Фиксируем только высоту, ширина адаптивная
+        # Динамическая высота с ограничениями
         from PyQt5.QtWidgets import QSizePolicy
-        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Minimum)
+        self.setMinimumHeight(int(52 * self.scale))  # 2 кнопки по 20px + отступы
+        self.setMaximumHeight(int(188 * self.scale))  # Максимальная высота (180 + 8 отступов)
         
         # Layout
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(int(8 * self.scale), int(8 * self.scale), int(8 * self.scale), int(8 * self.scale))
-        layout.setSpacing(int(8 * self.scale))
+        layout.setContentsMargins(self.element_margin, self.element_margin, self.element_margin, self.element_margin)
+        layout.setSpacing(int(6 * self.scale))
         
         self.setup_ui(layout)
     
@@ -122,25 +126,30 @@ class ClipboardItemWidget(QFrame):
         
         return pixmap
     
-    def create_thumbnail(self, image_path, max_height):
+    def create_thumbnail(self, image_path, max_height, max_width=None):
         """Создать миниатюру изображения с учетом пропорций"""
         try:
             pixmap = QPixmap(str(image_path))
             if pixmap.isNull():
                 return None
             
-            # Масштабируем по высоте, ширина по пропорциям
-            # Но не больше 800px по ширине (с учетом scale)
-            max_width = int(800 * self.scale)
+            # Если max_width не передан, вычисляем из max_height
+            if max_width is None:
+                max_width = int(max_height * 6.67)
+            
+            print(f"[DEBUG] Исходное изображение: {pixmap.width()}x{pixmap.height()}")
+            print(f"[DEBUG] Ограничения: max_width={max_width}, max_height={max_height}")
+            
             if pixmap.height() > max_height or pixmap.width() > max_width:
-                if pixmap.width() / pixmap.height() > max_width / max_height:
-                    # Ограничиваем по ширине
-                    return pixmap.scaledToWidth(max_width, Qt.SmoothTransformation)
-                else:
-                    # Ограничиваем по высоте
-                    return pixmap.scaledToHeight(max_height, Qt.SmoothTransformation)
+                # Используем scaled с KeepAspectRatio - масштабирует до первой границы
+                scaled_pixmap = pixmap.scaled(max_width, max_height, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                print(f"[DEBUG] Масштабированное: {scaled_pixmap.width()}x{scaled_pixmap.height()}")
+                return scaled_pixmap
+            
+            print(f"[DEBUG] Изображение не масштабируется (меньше лимитов)")
             return pixmap
-        except Exception:
+        except Exception as e:
+            print(f"[DEBUG] Ошибка: {e}")
             return None
     
     def setup_ui(self, layout):
@@ -150,38 +159,68 @@ class ClipboardItemWidget(QFrame):
         preview = self.preview
         is_dark = self.is_dark
         
-        # Контейнер для контента с фиксированной шириной
+        # Контейнер для контента с относительным позиционированием
         content_container = QWidget()
+        content_container.setMinimumHeight(int(52 * self.scale))  # Минимальная высота контента
         content_layout = QHBoxLayout(content_container)
         content_layout.setContentsMargins(0, 0, 0, 0)
         content_layout.setSpacing(0)
         
         # Для изображений - большое превью на всю ширину
         if mime_type.startswith('image/') and content_path:
-            icon_label = QLabel()
-            icon_label.setScaledContents(False)
-            icon_label.setMinimumHeight(int(95 * self.scale))
-            icon_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-            icon_label.setStyleSheet(f"""
-                background-color: {'#3a3a3a' if is_dark else '#f0f0f0'};
-                border-radius: {int(8 * self.scale)}px;
-                padding: {int(6 * self.scale)}px;
-            """)
+            # Загружаем изображение для расчета пропорций
+            from PyQt5.QtGui import QPixmap
+            import tempfile
+            pixmap = QPixmap(str(content_path))
             
-            # Большая миниатюра с учетом пропорций
-            pixmap = self.create_thumbnail(content_path, int(80 * self.scale))
-            if pixmap:
-                icon_label.setPixmap(pixmap)
-            
-            content_layout.addWidget(icon_label)
+            if not pixmap.isNull():
+                # Доступная ширина = content_width - margins (left+right)
+                available_width = self.parent_window.content_width - (self.element_margin * 2)
+                aspect_ratio = pixmap.height() / pixmap.width() if pixmap.width() > 0 else 1
+                scaled_height = int(available_width * aspect_ratio)
+                
+                # Ограничиваем высоту: минимум 52px, максимум 180px
+                container_height = max(int(52 * self.scale), min(scaled_height, int(180 * self.scale)))
+                
+                # Масштабируем изображение до размера контейнера
+                scaled_pixmap = pixmap.scaled(available_width, container_height,
+                                             Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                
+                # Сохраняем масштабированное изображение во временный файл
+                temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
+                scaled_pixmap.save(temp_file.name, 'PNG')
+                temp_file.close()
+                
+                # Контейнер для изображения - используем background-image с масштабированным файлом
+                safe_path = temp_file.name.replace('\\', '/').replace('"', '\\"')
+                image_container = QFrame()
+                image_container.setFixedHeight(container_height)
+                image_container.setStyleSheet(f"""
+                    QFrame {{
+                        background-color: {'#3a3a3a' if is_dark else '#f0f0f0'};
+                        background-image: url("{safe_path}");
+                        background-repeat: no-repeat;
+                        background-position: center;
+                        background-size: contain;
+                        border-radius: {int(8 * self.scale)}px;
+                    }}
+                """)
+                
+                # Сохраняем путь для последующей очистки
+                image_container.setProperty('temp_image', temp_file.name)
+                
+                content_layout.addWidget(image_container)
+            else:
+                # Если изображение не загрузилось - пустой контейнер
+                pass
         else:
             # Для текста - просто большой текст без иконки
             if mime_type.startswith('text/plain') or mime_type in ['UTF8_STRING', 'STRING', 'TEXT']:
-                # Текст большим шрифтом
+                # Текст большим шрифтом с ограничением высоты
                 preview_label = QLabel(preview)
                 preview_label.setWordWrap(True)
-                preview_label.setMinimumHeight(int(95 * self.scale))
-                preview_label.setMaximumHeight(int(95 * self.scale))
+                preview_label.setMinimumHeight(int(52 * self.scale))
+                preview_label.setMaximumHeight(int(132 * self.scale))  # Максимум для текста
                 preview_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
                 preview_label.setStyleSheet(f"""
                     color: {'#e0e0e0' if is_dark else '#333333'};
@@ -217,21 +256,13 @@ class ClipboardItemWidget(QFrame):
                 
                 preview_label = QLabel(preview)
                 preview_label.setWordWrap(True)
-                preview_label.setMinimumHeight(int(80 * self.scale))
-                preview_label.setMaximumHeight(int(80 * self.scale))
+                preview_label.setMinimumHeight(int(42 * self.scale))
+                preview_label.setMaximumHeight(int(120 * self.scale))
                 preview_label.setStyleSheet(f"""
                     color: {'#e0e0e0' if is_dark else '#333333'};
                     font-size: {int(9 * self.scale)}px;
                 """)
                 text_container.addWidget(preview_label)
-                
-                # Тип для неизвестных
-                type_label = QLabel(mime_type)
-                type_label.setStyleSheet(f"""
-                    color: {'#888888' if is_dark else '#666666'};
-                    font-size: {int(6 * self.scale)}px;
-                """)
-                text_container.addWidget(type_label)
                 text_container.addStretch()
                 
                 content_layout.addLayout(text_container, 1)
@@ -239,31 +270,69 @@ class ClipboardItemWidget(QFrame):
         # Добавляем контейнер в основной layout
         layout.addWidget(content_container, 1)
         
-        # Кнопки справа (иконка типа, удалить, закрепить)
+        # Метка времени и иконки типа поверх контента (оверлей)
+        if self.timestamp:
+            # Используем frame с абсолютным позиционированием через stylesheet
+            overlay_container = QFrame(content_container)
+            overlay_layout = QHBoxLayout(overlay_container)
+            overlay_layout.setContentsMargins(int(4 * self.scale), int(2 * self.scale), int(4 * self.scale), int(2 * self.scale))
+            overlay_layout.setSpacing(int(3 * self.scale))
+            
+            # Иконка типа (маленькая)
+            icon_color = '#ffffff' if is_dark else '#000000'
+            type_icon = self.create_svg_icon(self.get_mime_icon(), icon_color, int(12 * self.scale))
+            type_icon_label = QLabel()
+            type_icon_label.setPixmap(type_icon)
+            type_icon_label.setFixedSize(int(12 * self.scale), int(12 * self.scale))
+            overlay_layout.addWidget(type_icon_label)
+            
+            # Время (компактное)
+            time_text = self.format_time_ago().replace('\n', ' ')
+            time_label = QLabel(time_text)
+            time_label.setStyleSheet(f"""
+                color: {'#ffffff' if is_dark else '#000000'};
+                font-size: {int(7 * self.scale)}px;
+                background: transparent;
+                border: none;
+            """)
+            overlay_layout.addWidget(time_label)
+            
+            # Стиль оверлея с фиксированной позицией
+            # Используем цвет фона элемента с прозрачностью
+            if is_dark:
+                bg_r, bg_g, bg_b = 43, 43, 43  # #2b2b2b
+            else:
+                bg_r, bg_g, bg_b = 255, 255, 255  # #ffffff
+            
+            overlay_container.setStyleSheet(f"""
+                QFrame {{
+                    background-color: rgba({bg_r}, {bg_g}, {bg_b}, 0.85);
+                    border-top-left-radius: {int(4 * self.scale)}px;
+                    border-top-right-radius: 0px;
+                    border-bottom-left-radius: 0px;
+                    border-bottom-right-radius: 0px;
+                    border: none;
+                }}
+            """)
+            
+            # Размещаем в правом нижнем углу через geometry
+            overlay_container.adjustSize()
+            # Сохраняем ссылку для обновления позиции при ресайзе
+            self.time_overlay = overlay_container
+            self.time_overlay_parent = content_container
+        
+        # Кнопки справа (только удалить и закрепить)
         buttons_layout = QVBoxLayout()
         buttons_layout.setSpacing(int(4 * self.scale))
         buttons_layout.setAlignment(Qt.AlignTop)
         
-        # Иконка типа файла (для всех типов включая текст) - ПЕРВАЯ
-        icon_color = '#e0e0e0' if is_dark else '#333333'
-        type_icon = self.create_svg_icon(self.get_mime_icon(), icon_color, int(20 * self.scale))
-        type_icon_label = QLabel()
-        type_icon_label.setPixmap(type_icon)
-        type_icon_label.setAlignment(Qt.AlignCenter)
-        type_icon_label.setFixedSize(int(24 * self.scale), int(24 * self.scale))
-        type_icon_label.setStyleSheet("""
-            background: transparent;
-            border: none;
-        """)
-        buttons_layout.addWidget(type_icon_label)
-        
         # Кнопка удаления
         delete_btn = QLabel()
         icon_color = '#e0e0e0' if is_dark else '#333333'
-        delete_icon = self.create_svg_icon('trash', icon_color, int(16 * self.scale))
+        delete_icon = self.create_svg_icon('trash', icon_color, int(14 * self.scale))
         delete_btn.setPixmap(delete_icon)
         delete_btn.setCursor(Qt.PointingHandCursor)
-        delete_btn.setFixedSize(int(24 * self.scale), int(24 * self.scale))
+        delete_btn.setFixedSize(int(20 * self.scale), int(20 * self.scale))
         delete_btn.setAlignment(Qt.AlignCenter)
         delete_btn.setFocusPolicy(Qt.NoFocus)
         def on_delete(e):
@@ -275,11 +344,11 @@ class ClipboardItemWidget(QFrame):
         
         # Кнопка закрепления (по умолчанию не закреплено)
         pin_btn = QLabel()
-        pin_icon_name = 'pin' if self.pinned else 'pin-off'
-        pin_icon = self.create_svg_icon(pin_icon_name, icon_color, int(16 * self.scale))
+        pin_icon_name = 'pin-off' if self.pinned else 'pin'
+        pin_icon = self.create_svg_icon(pin_icon_name, icon_color, int(14 * self.scale))
         pin_btn.setPixmap(pin_icon)
         pin_btn.setCursor(Qt.PointingHandCursor)
-        pin_btn.setFixedSize(int(24 * self.scale), int(24 * self.scale))
+        pin_btn.setFixedSize(int(20 * self.scale), int(20 * self.scale))
         pin_btn.setAlignment(Qt.AlignCenter)
         pin_btn.setFocusPolicy(Qt.NoFocus)
         def on_pin(e):
@@ -291,20 +360,6 @@ class ClipboardItemWidget(QFrame):
         self.pin_btn = pin_btn  # Сохраняем ссылку для обновления иконки
         
         buttons_layout.addStretch()
-        
-        # Метка времени внизу
-        if self.timestamp:
-            time_label = QLabel(self.format_time_ago())
-            time_label.setAlignment(Qt.AlignCenter)
-            time_label.setWordWrap(True)
-            time_label.setMaximumWidth(int(50 * self.scale))  # Ограничиваем ширину
-            time_label.setStyleSheet(f"""
-                color: {'#888888' if is_dark else '#666666'};
-                font-size: {int(7 * self.scale)}px;
-                background: transparent;
-                border: none;
-            """)
-            buttons_layout.addWidget(time_label)
         
         layout.addLayout(buttons_layout)
         
@@ -323,25 +378,22 @@ class ClipboardItemWidget(QFrame):
                 border-radius: {int(8 * self.scale)}px;
             }}
         """)
-        """Создать миниатюру изображения с учетом пропорций"""
-        try:
-            pixmap = QPixmap(str(image_path))
-            if pixmap.isNull():
-                return None
+        
+        # Обновляем позицию оверлея после создания виджета
+        if hasattr(self, 'time_overlay'):
+            QTimer.singleShot(0, self.update_overlay_position)
+    
+    def update_overlay_position(self):
+        """Обновить позицию оверлея времени в правом нижнем углу"""
+        if hasattr(self, 'time_overlay') and hasattr(self, 'time_overlay_parent'):
+            parent = self.time_overlay_parent
+            overlay = self.time_overlay
             
-            # Масштабируем по высоте, ширина по пропорциям
-            # Но не больше 800px по ширине
-            max_width = 800
-            if pixmap.height() > max_height or pixmap.width() > max_width:
-                if pixmap.width() / pixmap.height() > max_width / max_height:
-                    # Ограничиваем по ширине
-                    return pixmap.scaledToWidth(max_width, Qt.SmoothTransformation)
-                else:
-                    # Ограничиваем по высоте
-                    return pixmap.scaledToHeight(max_height, Qt.SmoothTransformation)
-            return pixmap
-        except Exception:
-            return None
+            # Позиционируем в правом нижнем углу родителя без отступов
+            x = parent.width() - overlay.width()
+            y = parent.height() - overlay.height()
+            overlay.move(x, y)
+            overlay.raise_()  # Поднимаем на передний план
     
     def delete_item(self):
         """Удалить элемент из истории"""
@@ -384,7 +436,7 @@ class ClipHistoryWindow(QWidget):
         
         # Константы размеров
         self.scale = self.config.get('ui_scale', 1.0)
-        self.scrollbar_width = int(12 * self.scale)
+        self.scrollbar_width = int(10 * self.scale)
         self.content_width = int(320 * self.scale)  # Ширина контента
         self.window_width = self.content_width + self.scrollbar_width  # Общая ширина окна
         self.window_height = int(350 * self.scale)
@@ -562,7 +614,7 @@ class ClipHistoryWindow(QWidget):
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
         
         # Используем переменные размеров из __init__
-        self.setMinimumWidth(int(280 * self.scale))
+        self.setMinimumWidth(int(312 * self.scale))
         self.setMinimumHeight(self.window_height)
         self.setMaximumHeight(int(900 * self.scale))  # Максимальная высота
         self.resize(self.window_width, self.window_height)
@@ -702,7 +754,6 @@ class ClipHistoryWindow(QWidget):
                 }
                 QScrollBar::handle:vertical {
                     background: #555555;
-                    border-radius: 0px;
                     min-height: 30px;
                 }
                 QScrollBar::handle:vertical:hover {
@@ -738,7 +789,6 @@ class ClipHistoryWindow(QWidget):
                 }
                 QScrollBar::handle:vertical {
                     background: #cccccc;
-                    border-radius: 0px;
                     min-height: 30px;
                 }
                 QScrollBar::handle:vertical:hover {
@@ -849,11 +899,12 @@ class ClipHistoryWindow(QWidget):
         for item_id, mime_type, content_path, preview, pinned, timestamp in items:
             widget = ClipboardItemWidget(item_id, mime_type, content_path, preview[:150], 
                                         self.is_dark, pinned, parent_window=self, scale=self.scale, timestamp=timestamp)
-            # Устанавливаем максимальную ширину = ширина окна без скроллбара
-            widget.setMaximumWidth(self.content_width)
-            
+            # Устанавливаем максимальную ширину = ширина контента - скроллбар - отступ
+            # widget.setMaximumWidth(self.content_width - self.scrollbar_width - int(2 * self.scale))
+            widget.setMaximumWidth(self.content_width - int(2 * self.scale))
             item = QListWidgetItem(self.list_widget)
-            item.setSizeHint(QSize(self.content_width, int(115 * self.scale)))
+            # Динамическая высота элемента - используем sizeHint виджета
+            item.setSizeHint(widget.sizeHint())
             item.setData(Qt.UserRole, (item_id, mime_type, content_path, preview))
             
             self.list_widget.addItem(item)
