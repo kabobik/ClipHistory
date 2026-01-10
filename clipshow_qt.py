@@ -22,7 +22,7 @@ from PIL import Image
 class ClipboardItemWidget(QFrame):
     """Виджет для отдельного элемента истории"""
     
-    def __init__(self, item_id, mime_type, content_path, preview, is_dark, pinned, parent_window=None, scale=1.0, timestamp=None):
+    def __init__(self, item_id, mime_type, content_path, preview, is_dark, pinned, parent_window=None, scale=1.0, timestamp=None, text_max_lines=6, font_family='Noto Sans'):
         super().__init__()
         self.item_id = item_id
         self.mime_type = mime_type
@@ -33,10 +33,12 @@ class ClipboardItemWidget(QFrame):
         self.parent_window = parent_window
         self.scale = scale
         self.timestamp = timestamp
+        self.text_max_lines = text_max_lines
+        self.font_family = font_family
         
         # Размеры и отступы элемента
         self.element_margin = int(4 * self.scale)
-        self.element_min_height = int(52 * self.scale)
+        self.element_min_height = int(48 * self.scale)
         self.element_max_height = int(188 * self.scale)
         self.element_spacing = int(6 * self.scale)
         
@@ -53,11 +55,23 @@ class ClipboardItemWidget(QFrame):
         
         # Размеры шрифтов
         self.preview_font_size = int(11 * self.scale)
-        self.preview_min_height = int(52 * self.scale)
-        self.preview_max_height = int(132 * self.scale)
         self.small_preview_font_size = int(9 * self.scale)
+        
+        # Рассчитываем высоту текста на основе количества строк
+        # CSS padding добавляется ВНУТРЬ, поэтому нужно учесть его дважды
+        from PyQt5.QtGui import QFontMetrics
+        font = QFont(self.font_family, self.preview_font_size, QFont.Light)
+        metrics = QFontMetrics(font)
+        line_height = metrics.lineSpacing()
+        # Высота = строки + двойной padding (верх+низ в CSS)
+        self.preview_max_height = int(line_height * self.text_max_lines + self.content_padding * 4)
+        self.preview_min_height = int(52 * self.scale)
+        
+        small_font = QFont(self.font_family, self.small_preview_font_size, QFont.Normal)
+        small_metrics = QFontMetrics(small_font)
+        small_line_height = small_metrics.lineSpacing()
+        self.small_preview_max_height = int(small_line_height * self.text_max_lines + self.content_padding * 4)
         self.small_preview_min_height = int(42 * self.scale)
-        self.small_preview_max_height = int(120 * self.scale)
         
         # Overlay (время и иконка типа)
         self.overlay_margin_h = int(4 * self.scale)
@@ -251,11 +265,55 @@ class ClipboardItemWidget(QFrame):
         else:
             # Для текста - просто большой текст без иконки
             if mime_type.startswith('text/plain') or mime_type in ['UTF8_STRING', 'STRING', 'TEXT']:
-                # Текст большим шрифтом с ограничением высоты
-                preview_label = QLabel(preview)
+                # Рассчитываем максимальную высоту и обрезаем текст
+                from PyQt5.QtGui import QFontMetrics
+                from PyQt5.QtCore import QRect
+                
+                font = QFont(self.font_family, self.preview_font_size, QFont.Light)
+                metrics = QFontMetrics(font)
+                
+                # Доступная ширина для текста
+                available_width = self.parent_window.content_width - (self.element_margin * 2) - (self.content_padding * 2)
+                
+                # Разбиваем текст на строки учитывая переносы
+                lines = []
+                for paragraph in preview.split('\n'):
+                    if not paragraph.strip():
+                        lines.append('')
+                        if len(lines) >= self.text_max_lines:
+                            break
+                        continue
+                    
+                    words = paragraph.split(' ')
+                    current_line = ''
+                    
+                    for word in words:
+                        test_line = current_line + (' ' if current_line else '') + word
+                        if metrics.horizontalAdvance(test_line) <= available_width:
+                            current_line = test_line
+                        else:
+                            if current_line:
+                                lines.append(current_line)
+                                if len(lines) >= self.text_max_lines:
+                                    break
+                            # Если слово слишком длинное - берём его целиком как строку
+                            current_line = word
+                    
+                    if len(lines) >= self.text_max_lines:
+                        break
+                    if current_line:
+                        lines.append(current_line)
+                
+                # Берём только первые N строк
+                truncated_text = '\n'.join(lines[:self.text_max_lines])
+                
+                line_height = metrics.lineSpacing()
+                max_height = int(line_height * self.text_max_lines + self.content_padding * 2)
+                
+                # Текст большим шрифтом с ограничением по строкам
+                preview_label = QLabel(truncated_text)
                 preview_label.setWordWrap(True)
-                preview_label.setMinimumHeight(self.preview_min_height)
-                preview_label.setMaximumHeight(self.preview_max_height)
+                preview_label.setMaximumHeight(max_height)
                 preview_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
                 preview_label.setStyleSheet(f"""
                     color: {'#e0e0e0' if is_dark else '#333333'};
@@ -265,6 +323,7 @@ class ClipboardItemWidget(QFrame):
                     background-color: {'#3a3a3a' if is_dark else '#f0f0f0'};
                     border-radius: {self.border_radius}px;
                 """)
+                preview_label.setTextFormat(Qt.PlainText)
                 content_layout.addWidget(preview_label)
             else:
                 # Для других типов - иконка + текст
@@ -289,14 +348,56 @@ class ClipboardItemWidget(QFrame):
                 text_container = QVBoxLayout()
                 text_container.setSpacing(self.buttons_spacing)
                 
-                preview_label = QLabel(preview)
+                # Рассчитываем и обрезаем текст для маленького preview
+                from PyQt5.QtGui import QFontMetrics
+                small_font = QFont(self.font_family, self.small_preview_font_size, QFont.Normal)
+                small_metrics = QFontMetrics(small_font)
+                
+                # Доступная ширина меньше из-за иконки
+                available_width = self.parent_window.content_width - (self.element_margin * 2) - self.icon_size - self.element_spacing
+                
+                # Разбиваем текст на строки учитывая переносы
+                lines = []
+                for paragraph in preview.split('\n'):
+                    if not paragraph.strip():
+                        lines.append('')
+                        if len(lines) >= self.text_max_lines:
+                            break
+                        continue
+                    
+                    words = paragraph.split(' ')
+                    current_line = ''
+                    
+                    for word in words:
+                        test_line = current_line + (' ' if current_line else '') + word
+                        if small_metrics.horizontalAdvance(test_line) <= available_width:
+                            current_line = test_line
+                        else:
+                            if current_line:
+                                lines.append(current_line)
+                                if len(lines) >= self.text_max_lines:
+                                    break
+                            current_line = word
+                    
+                    if len(lines) >= self.text_max_lines:
+                        break
+                    if current_line:
+                        lines.append(current_line)
+                
+                truncated_text = '\n'.join(lines[:self.text_max_lines])
+                
+                small_line_height = small_metrics.lineSpacing()
+                max_height = int(small_line_height * self.text_max_lines)
+                
+                preview_label = QLabel(truncated_text)
                 preview_label.setWordWrap(True)
-                preview_label.setMinimumHeight(self.small_preview_min_height)
-                preview_label.setMaximumHeight(self.small_preview_max_height)
+                preview_label.setMaximumHeight(max_height)
                 preview_label.setStyleSheet(f"""
                     color: {'#e0e0e0' if is_dark else '#333333'};
                     font-size: {self.small_preview_font_size}px;
+                    padding: {self.content_padding}px;
                 """)
+                preview_label.setTextFormat(Qt.PlainText)
                 text_container.addWidget(preview_label)
                 text_container.addStretch()
                 
@@ -475,7 +576,7 @@ class ClipHistoryWindow(QWidget):
         self.scrollbar_width = int(12 * self.scale)
         self.content_width = int(320 * self.scale)
         self.window_width = self.content_width + self.scrollbar_width + self.border 
-        self.window_height = int(350 * self.scale)
+        self.window_height = int(450 * self.scale)
         self.window_max_height = int(900 * self.scale)
         self.window_min_width = self.content_width - self.scrollbar_width
         
@@ -559,9 +660,24 @@ class ClipHistoryWindow(QWidget):
         config_path = Path(__file__).parent / 'config.json'
         try:
             with open(config_path) as f:
-                return json.load(f)
+                config = json.load(f)
+                # Дефолтные значения для отсутствующих параметров
+                config.setdefault('auto_paste', True)
+                config.setdefault('ui_scale', 1.5)
+                config.setdefault('window_width', 320)
+                config.setdefault('window_height', 350)
+                config.setdefault('text_max_lines', 6)
+                config.setdefault('font_family', 'Noto Sans')
+                return config
         except Exception:
-            return {'auto_paste': True, 'ui_scale': 1.5}
+            return {
+                'auto_paste': True,
+                'ui_scale': 1.5,
+                'window_width': 320,
+                'window_height': 350,
+                'text_max_lines': 6,
+                'font_family': 'Noto Sans'
+            }
     
     def is_dark_theme(self):
         """Определить тёмную тему"""
@@ -655,9 +771,15 @@ class ClipHistoryWindow(QWidget):
                 self.last_item_count = current_count
             elif current_count != self.last_item_count:
                 # Есть новые элементы - обновляем список
+                # Сохраняем позицию скролла
+                scroll_position = self.list_widget.verticalScrollBar().value()
+                
                 self.list_widget.setUpdatesEnabled(False)
                 self.list_widget.clear()
                 self.load_history()
+                
+                # Восстанавливаем позицию скролла
+                self.list_widget.verticalScrollBar().setValue(scroll_position)
                 self.list_widget.setUpdatesEnabled(True)
                 self.last_item_count = current_count
         except Exception:
@@ -790,7 +912,7 @@ class ClipHistoryWindow(QWidget):
                 QListWidget {
                     background-color: #2b2b2b;
                     border: none;
-                    padding: 0px;
+                    padding: 0px 0px """ + str(int(10 * self.scale)) + """px 0px;
                 }
                 QListWidget::item {
                     background-color: transparent;
@@ -825,7 +947,7 @@ class ClipHistoryWindow(QWidget):
                 QListWidget {
                     background-color: #ffffff;
                     border: none;
-                    padding: 0px;
+                    padding: 0px 0px """ + str(int(10 * self.scale)) + """px 0px;
                 }
                 QListWidget::item {
                     background-color: transparent;
@@ -951,8 +1073,10 @@ class ClipHistoryWindow(QWidget):
         conn.close()
         
         for item_id, mime_type, content_path, preview, pinned, timestamp in items:
-            widget = ClipboardItemWidget(item_id, mime_type, content_path, preview[:150], 
-                                        self.is_dark, pinned, parent_window=self, scale=self.scale, timestamp=timestamp)
+            widget = ClipboardItemWidget(item_id, mime_type, content_path, preview[:1000], 
+                                        self.is_dark, pinned, parent_window=self, scale=self.scale, timestamp=timestamp,
+                                        text_max_lines=self.config.get('text_max_lines', 6),
+                                        font_family=self.config.get('font_family', 'Noto Sans'))
             # Устанавливаем максимальную ширину = ширина контента - скроллбар - отступ
             # widget.setMaximumWidth(self.content_width - self.scrollbar_width - self.list_item_gap)
             widget.setMaximumWidth(self.content_width - self.list_item_gap)
@@ -1119,10 +1243,16 @@ class ClipHistoryWindow(QWidget):
             conn.commit()
             conn.close()
             
+            # Сохраняем позицию скролла
+            scroll_position = self.list_widget.verticalScrollBar().value()
+            
             # Обновляем список с отключением обновления
             self.list_widget.setUpdatesEnabled(False)
             self.list_widget.clear()
             self.load_history()
+            
+            # Восстанавливаем позицию скролла
+            self.list_widget.verticalScrollBar().setValue(scroll_position)
             self.list_widget.setUpdatesEnabled(True)
         except Exception as e:
             print(f"Delete error: {e}")
@@ -1189,10 +1319,16 @@ class ClipHistoryWindow(QWidget):
             conn.commit()
             conn.close()
             
+            # Сохраняем позицию скролла
+            scroll_position = self.list_widget.verticalScrollBar().value()
+            
             # Обновляем список с отключением обновления
             self.list_widget.setUpdatesEnabled(False)
             self.list_widget.clear()
             self.load_history()
+            
+            # Восстанавливаем позицию скролла
+            self.list_widget.verticalScrollBar().setValue(scroll_position)
             self.list_widget.setUpdatesEnabled(True)
         except Exception as e:
             print(f"Pin error: {e}")
