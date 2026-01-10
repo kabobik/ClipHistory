@@ -22,7 +22,7 @@ from PIL import Image
 class ClipboardItemWidget(QFrame):
     """Виджет для отдельного элемента истории"""
     
-    def __init__(self, item_id, mime_type, content_path, preview, is_dark, pinned, parent_window=None):
+    def __init__(self, item_id, mime_type, content_path, preview, is_dark, pinned, parent_window=None, scale=1.0, timestamp=None):
         super().__init__()
         self.item_id = item_id
         self.mime_type = mime_type
@@ -31,9 +31,11 @@ class ClipboardItemWidget(QFrame):
         self.is_dark = is_dark
         self.pinned = pinned
         self.parent_window = parent_window
+        self.scale = scale
+        self.timestamp = timestamp
         
         self.setFrameStyle(QFrame.NoFrame)
-        self.setFixedHeight(240)
+        self.setFixedHeight(int(115 * self.scale))
         self.setCursor(Qt.PointingHandCursor)
         
         # Фиксируем только высоту, ширина адаптивная
@@ -42,10 +44,53 @@ class ClipboardItemWidget(QFrame):
         
         # Layout
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(16, 12, 16, 12)
-        layout.setSpacing(16)
+        layout.setContentsMargins(int(8 * self.scale), int(8 * self.scale), int(8 * self.scale), int(8 * self.scale))
+        layout.setSpacing(int(8 * self.scale))
         
         self.setup_ui(layout)
+    
+    def format_time_ago(self):
+        """Форматировать время относительно текущего момента"""
+        if not self.timestamp:
+            return ""
+        
+        import time
+        from datetime import datetime, timedelta
+        
+        now = time.time()
+        diff = now - self.timestamp
+        
+        if diff < 60:
+            return "только что"
+        elif diff < 3600:
+            mins = int(diff / 60)
+            return f"{mins} мин\nназад"
+        elif diff < 86400:  # меньше суток
+            hours = int(diff / 3600)
+            return f"{hours} ч\nназад"
+        elif diff < 172800:  # меньше 2 суток
+            return "вчера"
+        elif diff < 604800:  # меньше недели
+            days = int(diff / 86400)
+            return f"{days} дн назад"
+        else:
+            # Показываем дату
+            dt = datetime.fromtimestamp(self.timestamp)
+            return dt.strftime("%d.%m.%Y")
+    
+    def get_mime_icon(self):
+        """Получить название SVG иконки для типа MIME"""
+        if self.mime_type.startswith('text/') or self.mime_type in ['UTF8_STRING', 'STRING', 'TEXT']:
+            if 'html' in self.mime_type:
+                return 'web'
+            elif 'uri-list' in self.mime_type:
+                return 'link-variant'
+            else:
+                return 'text'
+        elif self.mime_type.startswith('image/'):
+            return 'image'
+        else:
+            return 'file'
     
     def create_svg_icon(self, svg_path, color, size=48):
         """Создать иконку из SVG"""
@@ -56,7 +101,13 @@ class ClipboardItemWidget(QFrame):
             'pin-off': '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="{color}" d="M2,5.27L3.28,4L20,20.72L18.73,22L12.8,16.07V22H11.2V16H6V14L8,12V11.27L2,5.27M16,12L18,14V16H17.82L8,6.18V4H7V2H17V4H16V12Z" /></svg>''',
             'download': '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="{color}" d="M5,20H19V18H5M19,9H15V3H9V9H5L12,16L19,9Z" /></svg>''',
             'clipboard': '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="{color}" d="M19 3H14.82C14.4 1.84 13.3 1 12 1S9.6 1.84 9.18 3H5C3.9 3 3 3.9 3 5V19C3 20.1 3.9 21 5 21H19C20.1 21 21 20.1 21 19V5C21 3.9 20.1 3 19 3M12 3C12.55 3 13 3.45 13 4S12.55 5 12 5 11 4.55 11 4 11.45 3 12 3M7 7H17V5H19V19H5V5H7V7M7 9V11H17V9H7M7 13V15H17V13H7Z" /></svg>''',
-            'close': '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="{color}" d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z" /></svg>'''
+            'close': '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="{color}" d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z" /></svg>''',
+            'text': '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="{color}" d="M14,17H7V15H14M17,13H7V11H17M17,9H7V7H17M19,3H5C3.89,3 3,3.89 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19V5C21,3.89 20.1,3 19,3Z" /></svg>''',
+            'image': '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="{color}" d="M8.5,13.5L11,16.5L14.5,12L19,18H5M21,19V5C21,3.89 20.1,3 19,3H5A2,2 0 0,0 3,5V19A2,2 0 0,0 5,21H19A2,2 0 0,0 21,19Z" /></svg>''',
+            'link': '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="{color}" d="M10.59,13.41C11,13.8 11,14.44 10.59,14.83C10.2,15.22 9.56,15.22 9.17,14.83C7.22,12.88 7.22,9.71 9.17,7.76V7.76L12.71,4.22C14.66,2.27 17.83,2.27 19.78,4.22C21.73,6.17 21.73,9.34 19.78,11.29L18.29,12.78C18.3,11.96 18.17,11.14 17.89,10.36L18.36,9.88C19.54,8.71 19.54,6.81 18.36,5.64C17.19,4.46 15.29,4.46 14.12,5.64L10.59,9.17C9.41,10.34 9.41,12.24 10.59,13.41M13.41,9.17C13.8,8.78 14.44,8.78 14.83,9.17C16.78,11.12 16.78,14.29 14.83,16.24V16.24L11.29,19.78C9.34,21.73 6.17,21.73 4.22,19.78C2.27,17.83 2.27,14.66 4.22,12.71L5.71,11.22C5.7,12.04 5.83,12.86 6.11,13.65L5.64,14.12C4.46,15.29 4.46,17.19 5.64,18.36C6.81,19.54 8.71,19.54 9.88,18.36L13.41,14.83C14.59,13.66 14.59,11.76 13.41,10.59C13,10.2 13,9.56 13.41,9.17Z" /></svg>''',
+            'link-variant': '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="{color}" d="M3.9,12C3.9,10.29 5.29,8.9 7,8.9H11V7H7A5,5 0 0,0 2,12A5,5 0 0,0 7,17H11V15.1H7C5.29,15.1 3.9,13.71 3.9,12M8,13H16V11H8V13M17,7H13V8.9H17C18.71,8.9 20.1,10.29 20.1,12C20.1,13.71 18.71,15.1 17,15.1H13V17H17A5,5 0 0,0 22,12A5,5 0 0,0 17,7Z" /></svg>''',
+            'web': '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="{color}" d="M16.36,14C16.44,13.34 16.5,12.68 16.5,12C16.5,11.32 16.44,10.66 16.36,10H19.74C19.9,10.64 20,11.31 20,12C20,12.69 19.9,13.36 19.74,14M14.59,19.56C15.19,18.45 15.65,17.25 15.97,16H18.92C17.96,17.65 16.43,18.93 14.59,19.56M14.34,14H9.66C9.56,13.34 9.5,12.68 9.5,12C9.5,11.32 9.56,10.65 9.66,10H14.34C14.43,10.65 14.5,11.32 14.5,12C14.5,12.68 14.43,13.34 14.34,14M12,19.96C11.17,18.76 10.5,17.43 10.09,16H13.91C13.5,17.43 12.83,18.76 12,19.96M8,8H5.08C6.03,6.34 7.57,5.06 9.4,4.44C8.8,5.55 8.35,6.75 8,8M5.08,16H8C8.35,17.25 8.8,18.45 9.4,19.56C7.57,18.93 6.03,17.65 5.08,16M4.26,14C4.1,13.36 4,12.69 4,12C4,11.31 4.1,10.64 4.26,10H7.64C7.56,10.66 7.5,11.32 7.5,12C7.5,12.68 7.56,13.34 7.64,14M12,4.03C12.83,5.23 13.5,6.57 13.91,8H10.09C10.5,6.57 11.17,5.23 12,4.03M18.92,8H15.97C15.65,6.75 15.19,5.55 14.59,4.44C16.43,5.07 17.96,6.34 18.92,8M12,2C6.47,2 2,6.5 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2Z" /></svg>''',
+            'file': '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="{color}" d="M13,9V3.5L18.5,9M6,2C4.89,2 4,2.89 4,4V20A2,2 0 0,0 6,22H18A2,2 0 0,0 20,20V8L14,2H6Z" /></svg>'''
         }
         
         svg_data = svg_icons.get(svg_path, '').format(color=color)
@@ -79,8 +130,8 @@ class ClipboardItemWidget(QFrame):
                 return None
             
             # Масштабируем по высоте, ширина по пропорциям
-            # Но не больше 800px по ширине
-            max_width = 800
+            # Но не больше 800px по ширине (с учетом scale)
+            max_width = int(800 * self.scale)
             if pixmap.height() > max_height or pixmap.width() > max_width:
                 if pixmap.width() / pixmap.height() > max_width / max_height:
                     # Ограничиваем по ширине
@@ -99,53 +150,56 @@ class ClipboardItemWidget(QFrame):
         preview = self.preview
         is_dark = self.is_dark
         
+        # Контейнер для контента с фиксированной шириной
+        content_container = QWidget()
+        content_layout = QHBoxLayout(content_container)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(0)
+        
         # Для изображений - большое превью на всю ширину
         if mime_type.startswith('image/') and content_path:
             icon_label = QLabel()
             icon_label.setScaledContents(False)
+            icon_label.setMinimumHeight(int(95 * self.scale))
             icon_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
             icon_label.setStyleSheet(f"""
                 background-color: {'#3a3a3a' if is_dark else '#f0f0f0'};
-                border-radius: 8px;
+                border-radius: {int(8 * self.scale)}px;
+                padding: {int(6 * self.scale)}px;
             """)
             
             # Большая миниатюра с учетом пропорций
-            pixmap = self.create_thumbnail(content_path, 220)
+            pixmap = self.create_thumbnail(content_path, int(80 * self.scale))
             if pixmap:
                 icon_label.setPixmap(pixmap)
-                # Устанавливаем размер по пропорциям изображения
-                if pixmap.width() > pixmap.height():
-                    # Широкое - на всю ширину
-                    icon_label.setFixedSize(min(pixmap.width(), 800), pixmap.height())
-                else:
-                    # Высокое или квадратное
-                    icon_label.setFixedSize(pixmap.width(), pixmap.height())
             
-            layout.addWidget(icon_label)
-            layout.addStretch()
+            content_layout.addWidget(icon_label)
         else:
             # Для текста - просто большой текст без иконки
-            if mime_type.startswith('text/plain'):
+            if mime_type.startswith('text/plain') or mime_type in ['UTF8_STRING', 'STRING', 'TEXT']:
                 # Текст большим шрифтом
                 preview_label = QLabel(preview)
                 preview_label.setWordWrap(True)
-                preview_label.setMaximumHeight(220)
+                preview_label.setMinimumHeight(int(95 * self.scale))
+                preview_label.setMaximumHeight(int(95 * self.scale))
                 preview_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
                 preview_label.setStyleSheet(f"""
                     color: {'#e0e0e0' if is_dark else '#333333'};
-                    font-size: 32px;
+                    font-size: {int(11 * self.scale)}px;
                     font-weight: 300;
-                    padding: 10px;
+                    padding: {int(6 * self.scale)}px;
+                    background-color: {'#3a3a3a' if is_dark else '#f0f0f0'};
+                    border-radius: {int(8 * self.scale)}px;
                 """)
-                layout.addWidget(preview_label)
+                content_layout.addWidget(preview_label)
             else:
                 # Для других типов - иконка + текст
                 icon_label = QLabel()
-                icon_label.setFixedSize(80, 80)
+                icon_label.setFixedSize(int(40 * self.scale), int(40 * self.scale))
                 icon_label.setScaledContents(True)
                 icon_label.setStyleSheet(f"""
                     background-color: {'#3a3a3a' if is_dark else '#f0f0f0'};
-                    border-radius: 8px;
+                    border-radius: {int(6 * self.scale)}px;
                 """)
                 
                 # Иконка по типу
@@ -153,20 +207,21 @@ class ClipboardItemWidget(QFrame):
                 
                 icon_label.setText(icon_name)
                 icon_label.setAlignment(Qt.AlignCenter)
-                icon_label.setFont(QFont('Sans', 42))
+                icon_label.setFont(QFont('Sans', int(14 * self.scale)))
                 
-                layout.addWidget(icon_label)
+                content_layout.addWidget(icon_label)
                 
                 # Текст (справа)
                 text_container = QVBoxLayout()
-                text_container.setSpacing(4)
+                text_container.setSpacing(int(4 * self.scale))
                 
                 preview_label = QLabel(preview)
                 preview_label.setWordWrap(True)
-                preview_label.setMaximumHeight(200)
+                preview_label.setMinimumHeight(int(80 * self.scale))
+                preview_label.setMaximumHeight(int(80 * self.scale))
                 preview_label.setStyleSheet(f"""
                     color: {'#e0e0e0' if is_dark else '#333333'};
-                    font-size: 16px;
+                    font-size: {int(9 * self.scale)}px;
                 """)
                 text_container.addWidget(preview_label)
                 
@@ -174,25 +229,41 @@ class ClipboardItemWidget(QFrame):
                 type_label = QLabel(mime_type)
                 type_label.setStyleSheet(f"""
                     color: {'#888888' if is_dark else '#666666'};
-                    font-size: 12px;
+                    font-size: {int(6 * self.scale)}px;
                 """)
                 text_container.addWidget(type_label)
                 text_container.addStretch()
                 
-                layout.addLayout(text_container, 1)
+                content_layout.addLayout(text_container, 1)
         
-        # Кнопки справа (удалить, закрепить, скачать)
+        # Добавляем контейнер в основной layout
+        layout.addWidget(content_container, 1)
+        
+        # Кнопки справа (иконка типа, удалить, закрепить)
         buttons_layout = QVBoxLayout()
-        buttons_layout.setSpacing(8)
+        buttons_layout.setSpacing(int(4 * self.scale))
         buttons_layout.setAlignment(Qt.AlignTop)
+        
+        # Иконка типа файла (для всех типов включая текст) - ПЕРВАЯ
+        icon_color = '#e0e0e0' if is_dark else '#333333'
+        type_icon = self.create_svg_icon(self.get_mime_icon(), icon_color, int(20 * self.scale))
+        type_icon_label = QLabel()
+        type_icon_label.setPixmap(type_icon)
+        type_icon_label.setAlignment(Qt.AlignCenter)
+        type_icon_label.setFixedSize(int(24 * self.scale), int(24 * self.scale))
+        type_icon_label.setStyleSheet("""
+            background: transparent;
+            border: none;
+        """)
+        buttons_layout.addWidget(type_icon_label)
         
         # Кнопка удаления
         delete_btn = QLabel()
         icon_color = '#e0e0e0' if is_dark else '#333333'
-        delete_icon = self.create_svg_icon('trash', icon_color, 40)
+        delete_icon = self.create_svg_icon('trash', icon_color, int(16 * self.scale))
         delete_btn.setPixmap(delete_icon)
         delete_btn.setCursor(Qt.PointingHandCursor)
-        delete_btn.setFixedSize(56, 56)
+        delete_btn.setFixedSize(int(24 * self.scale), int(24 * self.scale))
         delete_btn.setAlignment(Qt.AlignCenter)
         delete_btn.setFocusPolicy(Qt.NoFocus)
         def on_delete(e):
@@ -205,10 +276,10 @@ class ClipboardItemWidget(QFrame):
         # Кнопка закрепления (по умолчанию не закреплено)
         pin_btn = QLabel()
         pin_icon_name = 'pin' if self.pinned else 'pin-off'
-        pin_icon = self.create_svg_icon(pin_icon_name, icon_color, 40)
+        pin_icon = self.create_svg_icon(pin_icon_name, icon_color, int(16 * self.scale))
         pin_btn.setPixmap(pin_icon)
         pin_btn.setCursor(Qt.PointingHandCursor)
-        pin_btn.setFixedSize(56, 56)
+        pin_btn.setFixedSize(int(24 * self.scale), int(24 * self.scale))
         pin_btn.setAlignment(Qt.AlignCenter)
         pin_btn.setFocusPolicy(Qt.NoFocus)
         def on_pin(e):
@@ -218,7 +289,22 @@ class ClipboardItemWidget(QFrame):
         pin_btn.mousePressEvent = on_pin
         buttons_layout.addWidget(pin_btn)
         self.pin_btn = pin_btn  # Сохраняем ссылку для обновления иконки
+        
         buttons_layout.addStretch()
+        
+        # Метка времени внизу
+        if self.timestamp:
+            time_label = QLabel(self.format_time_ago())
+            time_label.setAlignment(Qt.AlignCenter)
+            time_label.setWordWrap(True)
+            time_label.setMaximumWidth(int(50 * self.scale))  # Ограничиваем ширину
+            time_label.setStyleSheet(f"""
+                color: {'#888888' if is_dark else '#666666'};
+                font-size: {int(7 * self.scale)}px;
+                background: transparent;
+                border: none;
+            """)
+            buttons_layout.addWidget(time_label)
         
         layout.addLayout(buttons_layout)
         
@@ -234,7 +320,7 @@ class ClipboardItemWidget(QFrame):
             QFrame {{
                 background-color: {bg};
                 border: 1px solid {border};
-                border-radius: 8px;
+                border-radius: {int(8 * self.scale)}px;
             }}
         """)
         """Создать миниатюру изображения с учетом пропорций"""
@@ -280,6 +366,9 @@ class ClipHistoryWindow(QWidget):
     def __init__(self):
         super().__init__()
         
+        # Проверка и запуск демона если не запущен
+        self.check_and_start_daemon()
+        
         # Проверка единственного экземпляра
         self.lock_file = Path.home() / '.cache' / 'cliphistory' / '.ui.lock'
         if not self.acquire_lock():
@@ -295,15 +384,37 @@ class ClipHistoryWindow(QWidget):
         
         # Константы размеров
         self.scale = self.config.get('ui_scale', 1.0)
-        self.scrollbar_width = int(28 * self.scale)
-        self.content_width = int(595 * self.scale)  # Ширина контента
+        self.scrollbar_width = int(12 * self.scale)
+        self.content_width = int(320 * self.scale)  # Ширина контента
         self.window_width = self.content_width + self.scrollbar_width  # Общая ширина окна
-        self.window_height = int(700 * self.scale)
+        self.window_height = int(350 * self.scale)
         
         self.init_ui()
         self.load_history()
         self.position_near_cursor()
         self.setup_auto_refresh()
+    
+    def check_and_start_daemon(self):
+        """Проверка и запуск демона если не запущен"""
+        try:
+            # Проверяем процесс демона
+            result = subprocess.run(
+                ['pgrep', '-f', '/usr/local/bin/cliphistory'],
+                capture_output=True,
+                timeout=1
+            )
+            
+            if result.returncode != 0:  # Демон не запущен
+                print("⚠️  Демон не запущен, запускаем...")
+                subprocess.Popen(
+                    ['cliphistory'],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
+                )
+                import time
+                time.sleep(1)  # Даем время демону запуститься
+        except Exception as e:
+            print(f"Ошибка проверки демона: {e}")
     
     def acquire_lock(self):
         """Проверка что UI не запущен"""
@@ -357,7 +468,7 @@ class ClipHistoryWindow(QWidget):
         except Exception:
             return True
     
-    def create_svg_icon(self, svg_path, size, color):
+    def create_svg_icon(self, svg_path, color, size):
         """Создать иконку из SVG"""
         svg_icons = {
             'trash': '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="{color}" d="M9,3V4H4V6H5V19A2,2 0 0,0 7,21H17A2,2 0 0,0 19,19V6H20V4H15V3H9M7,6H17V19H7V6M9,8V17H11V8H9M13,8V17H15V8H13Z" /></svg>''',
@@ -383,7 +494,7 @@ class ClipHistoryWindow(QWidget):
             return
         
         # Создаем иконку для трея
-        tray_icon_pixmap = self.create_svg_icon('clipboard', 64, '#ffffff' if self.is_dark else '#000000')
+        tray_icon_pixmap = self.create_svg_icon('clipboard', '#ffffff' if self.is_dark else '#000000', 64)
         
         self.tray_icon = QSystemTrayIcon(QIcon(tray_icon_pixmap), self)
         self.tray_icon.setToolTip('ClipHistory - История буфера обмена')
@@ -451,38 +562,63 @@ class ClipHistoryWindow(QWidget):
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
         
         # Используем переменные размеров из __init__
-        self.setFixedSize(self.window_width, self.window_height)
+        self.setMinimumWidth(int(280 * self.scale))
+        self.setMinimumHeight(self.window_height)
+        self.setMaximumHeight(int(900 * self.scale))  # Максимальная высота
+        self.resize(self.window_width, self.window_height)
+        
+        # Для изменения размера
+        self.resize_margin = int(8 * self.scale)
+        self.resizing = False
+        self.resize_direction = None
         
         # Главный layout
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
         
+        # Полоска для изменения размера сверху
+        resize_handle = QFrame()
+        resize_handle.setFixedHeight(int(4 * self.scale))
+        resize_handle.setCursor(Qt.SizeVerCursor)
+        if self.is_dark:
+            resize_handle.setStyleSheet("""
+                background-color: #404040;
+                border: none;
+            """)
+        else:
+            resize_handle.setStyleSheet("""
+                background-color: #d0d0d0;
+                border: none;
+            """)
+        self.resize_handle = resize_handle
+        main_layout.addWidget(resize_handle)
+        
         # Заголовок
         header = QFrame()
-        header.setFixedHeight(int(80 * self.scale))
+        header.setFixedHeight(int(33 * self.scale))
         header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(int(20 * self.scale), 0, int(20 * self.scale), 0)
-        header_layout.setSpacing(int(12 * self.scale))
+        header_layout.setContentsMargins(int(10 * self.scale), 0, int(10 * self.scale), 0)
+        header_layout.setSpacing(int(8 * self.scale))
         
         # Иконка приложения
         icon_color = '#ffffff' if self.is_dark else '#000000'
         app_icon = QLabel()
-        app_icon.setPixmap(self.create_svg_icon('clipboard', int(48 * self.scale), icon_color))
-        app_icon.setFixedSize(int(48 * self.scale), int(48 * self.scale))
+        app_icon.setPixmap(self.create_svg_icon('clipboard', icon_color, int(18 * self.scale)))
+        app_icon.setFixedSize(int(18 * self.scale), int(18 * self.scale))
         header_layout.addWidget(app_icon)
         
         title = QLabel("История буфера обмена")
-        title.setFont(QFont('Sans', int(12 * self.scale), QFont.Bold))
+        title.setFont(QFont('Sans', int(10 * self.scale), QFont.Bold))
         title.setAlignment(Qt.AlignVCenter)
         header_layout.addWidget(title)
         header_layout.addStretch()
         
         # Кнопка закрытия
         close_btn = QPushButton()
-        close_btn.setFixedSize(int(48 * self.scale), int(48 * self.scale))
-        close_btn.setIcon(QIcon(self.create_svg_icon('close', int(32 * self.scale), icon_color)))
-        close_btn.setIconSize(QSize(int(32 * self.scale), int(32 * self.scale)))
+        close_btn.setFixedSize(int(32 * self.scale), int(32 * self.scale))
+        close_btn.setIcon(QIcon(self.create_svg_icon('close', icon_color, int(20 * self.scale))))
+        close_btn.setIconSize(QSize(int(20 * self.scale), int(20 * self.scale)))
         close_btn.setCursor(Qt.PointingHandCursor)
         close_btn.clicked.connect(self.close)
         
@@ -539,7 +675,7 @@ class ClipHistoryWindow(QWidget):
         # Список элементов
         self.list_widget = QListWidget()
         self.list_widget.setFrameStyle(QFrame.NoFrame)
-        self.list_widget.setSpacing(int(4 * self.scale))
+        self.list_widget.setSpacing(int(2 * self.scale))
         self.list_widget.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.list_widget.itemClicked.connect(self.on_item_clicked)
         
@@ -561,7 +697,7 @@ class ClipHistoryWindow(QWidget):
                 QScrollBar:vertical {
                     border: none;
                     background: #2b2b2b;
-                    width: 28px;
+                    width: """ + str(int(12 * self.scale)) + """px;
                     margin: 0;
                 }
                 QScrollBar::handle:vertical {
@@ -597,7 +733,7 @@ class ClipHistoryWindow(QWidget):
                 QScrollBar:vertical {
                     border: none;
                     background: #f5f5f5;
-                    width: 28px;
+                    width: """ + str(int(12 * self.scale)) + """px;
                     margin: 0;
                 }
                 QScrollBar::handle:vertical {
@@ -702,7 +838,7 @@ class ClipHistoryWindow(QWidget):
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         cursor.execute('''
-            SELECT id, mime_type, content_path, preview, COALESCE(pinned, 0) as pinned
+            SELECT id, mime_type, content_path, preview, COALESCE(pinned, 0) as pinned, timestamp
             FROM items 
             ORDER BY pinned DESC, timestamp DESC
             LIMIT 50
@@ -710,14 +846,14 @@ class ClipHistoryWindow(QWidget):
         items = cursor.fetchall()
         conn.close()
         
-        for item_id, mime_type, content_path, preview, pinned in items:
+        for item_id, mime_type, content_path, preview, pinned, timestamp in items:
             widget = ClipboardItemWidget(item_id, mime_type, content_path, preview[:150], 
-                                        self.is_dark, pinned, parent_window=self)
+                                        self.is_dark, pinned, parent_window=self, scale=self.scale, timestamp=timestamp)
             # Устанавливаем максимальную ширину = ширина окна без скроллбара
             widget.setMaximumWidth(self.content_width)
             
             item = QListWidgetItem(self.list_widget)
-            item.setSizeHint(QSize(self.content_width, 240))
+            item.setSizeHint(QSize(self.content_width, int(115 * self.scale)))
             item.setData(Qt.UserRole, (item_id, mime_type, content_path, preview))
             
             self.list_widget.addItem(item)
@@ -784,10 +920,30 @@ class ClipHistoryWindow(QWidget):
         self.release_lock()
         event.accept()
     
+    def get_resize_direction(self, pos):
+        """Определить направление изменения размера"""
+        rect = self.rect()
+        y = pos.y()
+        
+        # Только верхняя граница (полоска + небольшая область)
+        if y <= int(4 * self.scale) + self.resize_margin:
+            return 'top'
+        return None
+    
     def mousePressEvent(self, event):
-        """Начало перетаскивания окна - только при клике на заголовок"""
+        """Начало перетаскивания окна или изменения размера"""
         if event.button() == Qt.LeftButton:
-            # Проверяем что клик был в области заголовка
+            # Проверяем изменение размера
+            resize_dir = self.get_resize_direction(event.pos())
+            if resize_dir:
+                self.resizing = True
+                self.resize_direction = resize_dir
+                self.resize_start_pos = event.globalPos()
+                self.resize_start_geometry = self.geometry()
+                event.accept()
+                return
+            
+            # Проверяем что клик был в области заголовка для перетаскивания
             if hasattr(self, 'header_widget') and self.header_widget.geometry().contains(event.pos()):
                 self.drag_position = event.globalPos() - self.frameGeometry().topLeft()
                 event.accept()
@@ -795,15 +951,39 @@ class ClipHistoryWindow(QWidget):
                 event.ignore()
     
     def mouseMoveEvent(self, event):
-        """Перетаскивание окна"""
-        if event.buttons() == Qt.LeftButton and self.drag_position:
+        """Перетаскивание окна или изменение размера"""
+        # Изменение курсора при наведении на верхнюю границу
+        if not self.resizing and not self.drag_position:
+            resize_dir = self.get_resize_direction(event.pos())
+            if resize_dir == 'top':
+                self.setCursor(Qt.SizeVerCursor)
+            else:
+                self.setCursor(Qt.ArrowCursor)
+        
+        # Изменение высоты через верх (меняем и Y позицию, и высоту)
+        if event.buttons() == Qt.LeftButton and self.resizing:
+            delta = event.globalPos() - self.resize_start_pos
+            geo = self.resize_start_geometry
+            
+            # Новая высота (при движении вверх delta.y отрицательный, высота увеличивается)
+            new_height = max(self.minimumHeight(), min(self.maximumHeight(), geo.height() - delta.y()))
+            # Если высота изменилась, сдвигаем окно
+            if new_height != geo.height():
+                new_y = geo.y() + (geo.height() - new_height)
+                self.setGeometry(geo.x(), new_y, self.width(), new_height)
+            event.accept()
+        # Перетаскивание окна
+        elif event.buttons() == Qt.LeftButton and self.drag_position:
             self.move(event.globalPos() - self.drag_position)
             event.accept()
     
     def mouseReleaseEvent(self, event):
-        """Остановка перетаскивания"""
+        """Остановка перетаскивания или изменения размера"""
         if event.button() == Qt.LeftButton:
             self.drag_position = None
+            self.resizing = False
+            self.resize_direction = None
+            self.setCursor(Qt.ArrowCursor)
             event.accept()
     
     def delete_item_from_db(self, item_id):
@@ -913,6 +1093,10 @@ class ClipHistoryWindow(QWidget):
             print(f"Pin error: {e}")
 
 def main():
+    # Включаем поддержку High DPI для раздельного масштабирования мониторов
+    QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+    QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+    
     app = QApplication(sys.argv)
     window = ClipHistoryWindow()
     window.show()

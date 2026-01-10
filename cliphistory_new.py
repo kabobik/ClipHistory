@@ -264,14 +264,27 @@ class HotkeyManager:
         self.root = None
     
     def is_ui_running(self):
-        """Проверка запущен ли UI"""
-        if self.ui_process is None:
+        """Проверка запущен ли UI (через lock-файл)"""
+        lock_file = Path.home() / '.cache' / 'cliphistory' / '.ui.lock'
+        
+        if not lock_file.exists():
             return False
-        if self.ui_process.poll() is not None:
-            # Процесс завершен
-            self.ui_process = None
+        
+        # Проверяем что процесс с PID из lock-файла существует
+        try:
+            with open(lock_file) as f:
+                pid = int(f.read().strip())
+            # Проверяем существование процесса
+            import os
+            os.kill(pid, 0)
+            return True  # Процесс существует и окно открыто
+        except (ProcessLookupError, ValueError, FileNotFoundError):
+            # Процесс не существует или файл битый - окно закрыто
+            try:
+                lock_file.unlink()
+            except:
+                pass
             return False
-        return True
         self.keyboards_grabbed = False
         if self.config.get('debug'):
             print("🔓 Клавиатуры отпущены")
@@ -510,6 +523,30 @@ class ClipHistoryDaemon:
         
         self.tray_menu.addSeparator()
         
+        # Подменю масштабирования
+        scale_menu = QMenu('Масштаб интерфейса', self.tray_menu)
+        scale_menu.setStyleSheet(self.tray_menu.styleSheet())
+        
+        # Создаем группу для радио-кнопок (взаимоисключающий выбор)
+        from PyQt5.QtWidgets import QActionGroup
+        scale_group = QActionGroup(scale_menu)
+        scale_group.setExclusive(True)
+        
+        current_scale = self.config.get('ui_scale', 1.5)
+        
+        for scale_value in [1.0, 1.25, 1.5, 2.0]:
+            scale_action = QAction(f'{scale_value}x', scale_menu)
+            scale_action.setCheckable(True)
+            scale_action.setActionGroup(scale_group)  # Добавляем в группу
+            if abs(current_scale - scale_value) < 0.01:
+                scale_action.setChecked(True)
+            scale_action.triggered.connect(lambda checked, s=scale_value: self.change_ui_scale(s))
+            scale_menu.addAction(scale_action)
+        
+        self.tray_menu.addMenu(scale_menu)
+        
+        self.tray_menu.addSeparator()
+        
         quit_action = QAction('Выход', self.tray_menu)
         quit_action.triggered.connect(self.quit_daemon)
         self.tray_menu.addAction(quit_action)
@@ -529,6 +566,32 @@ class ClipHistoryDaemon:
     def launch_ui(self):
         """Запустить UI"""
         self.hotkey_manager.launch_ui()
+    
+    def change_ui_scale(self, scale):
+        """Изменить масштаб интерфейса"""
+        try:
+            # Обновляем конфигурацию
+            self.config['ui_scale'] = scale
+            
+            # Сохраняем в файл
+            config_path = self.script_path.parent / 'config.json'
+            with open(config_path, 'w') as f:
+                json.dump(self.config, f, indent=2)
+            
+            # Показываем уведомление через трей
+            if self.tray_icon:
+                self.tray_icon.showMessage(
+                    'Масштаб изменен',
+                    f'Масштаб интерфейса установлен на {scale}x.\nИзменения вступят в силу при следующем открытии окна.',
+                    QSystemTrayIcon.Information,
+                    3000
+                )
+            
+            if self.config.get('debug'):
+                print(f"✅ Масштаб изменен на {scale}x")
+        except Exception as e:
+            if self.config.get('debug'):
+                print(f"Ошибка изменения масштаба: {e}")
     
     def quit_daemon(self):
         """Выход из демона"""
