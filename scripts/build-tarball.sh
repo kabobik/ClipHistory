@@ -3,7 +3,8 @@
 
 set -e
 
-VERSION="1.0.0"
+# Читаем версию из файла VERSION
+VERSION=$(cat "$(dirname "$0")/../VERSION" | tr -d '\n\r')
 PACKAGE_NAME="cliphistory"
 BUILD_DIR="build/${PACKAGE_NAME}-${VERSION}"
 
