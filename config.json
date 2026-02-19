@@ -7,7 +7,7 @@
   "hotkey": "Super+V",
   "auto_paste": true,
   "debug": true,
-  "ui_scale": 1.5,
+  "ui_scale": 1.25,
   "window_width": 320,
   "window_height": 350,
   "text_max_lines": 6,
