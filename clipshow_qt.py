@@ -9,7 +9,7 @@ os.environ['QT_QPA_PLATFORM'] = 'xcb'
 from PyQt5.QtWidgets import (QApplication, QWidget, QListWidget, QListWidgetItem,
                              QVBoxLayout, QHBoxLayout, QLabel, QFrame, QPushButton, 
                              QFileDialog, QSystemTrayIcon, QMenu, QAction)
-from PyQt5.QtCore import Qt, QSize, pyqtSignal, QByteArray, QTimer
+from PyQt5.QtCore import Qt, QSize, pyqtSignal, QByteArray, QTimer, QEvent
 from PyQt5.QtGui import QPixmap, QIcon, QPalette, QColor, QFont, QPainter
 from PyQt5.QtSvg import QSvgRenderer
 
@@ -699,6 +699,7 @@ class ClipHistoryWindow(QWidget):
                 config = json.load(f)
                 # Дефолтные значения для отсутствующих параметров
                 config.setdefault('auto_paste', True)
+                config.setdefault('close_on_focus_loss', False)
                 config.setdefault('ui_scale', 1.5)
                 config.setdefault('window_width', 320)
                 config.setdefault('window_height', 350)
@@ -708,6 +709,7 @@ class ClipHistoryWindow(QWidget):
         except Exception:
             return {
                 'auto_paste': True,
+                'close_on_focus_loss': False,
                 'ui_scale': 1.5,
                 'window_width': 320,
                 'window_height': 350,
@@ -789,6 +791,9 @@ class ClipHistoryWindow(QWidget):
     def init_ui(self):
         """Инициализация UI"""
         self.setWindowTitle("История буфера обмена")
+        
+        # Используем Qt.Tool, чтобы окно не появлялось на панели задач.
+        # Для закрытия при потере фокуса мы используем события деактивации и focusChanged.
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
         
         # Используем переменные размеров из __init__
@@ -1140,11 +1145,24 @@ class ClipHistoryWindow(QWidget):
         """Обработка клавиш"""
         if event.key() == Qt.Key_Escape:
             self.close()
+
+    def hideEvent(self, event):
+        """При скрытии окна (например, Popup по клику мимо) вызываем закрытие для снятия блокировок"""
+        self.close()
+        super().hideEvent(event)
     
     def closeEvent(self, event):
         """Обработка закрытия окна"""
         self.release_lock()
         event.accept()
+
+    def changeEvent(self, event):
+        """Обработка смены состояния окна"""
+        # Если окно теряет фокус (выходит на задний план)
+        if event.type() == QEvent.ActivationChange:
+            if not self.isActiveWindow() and self.config.get('close_on_focus_loss', False):
+                self.close()
+        super().changeEvent(event)
     
     def get_resize_direction(self, pos):
         """Определить направление изменения размера"""
@@ -1339,6 +1357,23 @@ def main():
     app = QApplication(sys.argv)
     window = ClipHistoryWindow()
     window.show()
+    window.raise_()
+    window.activateWindow()
+    
+    # Для Linux/X11: отлавливаем изменение фокуса приложения в целом
+    def check_focus():
+        # Если включена опция закрытия и нет активного окна Qt
+        if window.config.get('close_on_focus_loss', False):
+            if QApplication.activeWindow() is None:
+                window.close()
+
+    if window.config.get('close_on_focus_loss', False):
+        # Начинаем следить за фокусом через 500мс после запуска окна (чтобы дать время WM выдать фокус)
+        poll_timer = QTimer()
+        poll_timer.timeout.connect(check_focus)
+        QTimer.singleShot(500, lambda: poll_timer.start(250))
+        window.poll_timer = poll_timer
+
     sys.exit(app.exec_())
 
 if __name__ == '__main__':

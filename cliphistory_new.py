@@ -625,6 +625,14 @@ class ClipHistoryDaemon:
         
         self.tray_menu.addSeparator()
         
+        focus_toggle_action = QAction('Закрывать при потере фокуса', self.tray_menu)
+        focus_toggle_action.setCheckable(True)
+        focus_toggle_action.setChecked(self.config.get('close_on_focus_loss', False))
+        focus_toggle_action.triggered.connect(self.toggle_focus_loss_setting)
+        self.tray_menu.addAction(focus_toggle_action)
+        
+        self.tray_menu.addSeparator()
+        
         quit_action = QAction('Выход', self.tray_menu)
         quit_action.triggered.connect(self.quit_daemon)
         self.tray_menu.addAction(quit_action)
@@ -670,6 +678,21 @@ class ClipHistoryDaemon:
         except Exception as e:
             if self.config.get('debug'):
                 print(f"Ошибка изменения масштаба: {e}")
+
+    def toggle_focus_loss_setting(self, checked):
+        """Включить/выключить закрытие окна при потере фокуса"""
+        try:
+            self.config['close_on_focus_loss'] = checked
+            
+            config_path = self.get_config_path()
+            with open(config_path, 'w') as f:
+                json.dump(self.config, f, indent=2)
+                
+            if self.config.get('debug'):
+                print(f"✅ close_on_focus_loss изменено на {checked}")
+        except Exception as e:
+            if self.config.get('debug'):
+                print(f"Ошибка изменения настроек фокуса: {e}")
     
     def quit_daemon(self):
         """Выход из демона"""
