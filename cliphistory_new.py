@@ -153,10 +153,20 @@ class ClipboardMonitor:
             
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            cursor.execute('''
-                INSERT OR IGNORE INTO items (timestamp, mime_type, content_path, preview, hash)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (time.time(), mime_type, str(file_path), preview, content_hash))
+            
+            # Проверяем есть ли уже такой хеш
+            cursor.execute('SELECT id FROM items WHERE hash = ?', (content_hash,))
+            row = cursor.fetchone()
+            
+            if row:
+                # Обновляем время у существующей записи
+                cursor.execute('UPDATE items SET timestamp = ? WHERE id = ?', (time.time(), row[0]))
+            else:
+                cursor.execute('''
+                    INSERT OR IGNORE INTO items (timestamp, mime_type, content_path, preview, hash)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (time.time(), mime_type, str(file_path), preview, content_hash))
+            
             conn.commit()
             conn.close()
         except Exception as e:
@@ -174,10 +184,20 @@ class ClipboardMonitor:
             
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            cursor.execute('''
-                INSERT OR IGNORE INTO items (timestamp, mime_type, content_path, preview, hash)
-                VALUES (?, ?, ?, '', ?)
-            ''', (time.time(), mime_type, str(file_path), content_hash))
+            
+            # Проверяем есть ли уже такой хеш
+            cursor.execute('SELECT id FROM items WHERE hash = ?', (content_hash,))
+            row = cursor.fetchone()
+            
+            if row:
+                # Обновляем время у существующей записи
+                cursor.execute('UPDATE items SET timestamp = ? WHERE id = ?', (time.time(), row[0]))
+            else:
+                cursor.execute('''
+                    INSERT OR IGNORE INTO items (timestamp, mime_type, content_path, preview, hash)
+                    VALUES (?, ?, ?, '', ?)
+                ''', (time.time(), mime_type, str(file_path), content_hash))
+            
             conn.commit()
             conn.close()
         except Exception as e:
@@ -195,10 +215,20 @@ class ClipboardMonitor:
             
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
-            cursor.execute('''
-                INSERT OR IGNORE INTO items (timestamp, mime_type, content_path, preview, hash)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (time.time(), mime_type, str(file_path), preview, content_hash))
+            
+            # Проверяем есть ли уже такой хеш
+            cursor.execute('SELECT id FROM items WHERE hash = ?', (content_hash,))
+            row = cursor.fetchone()
+            
+            if row:
+                # Обновляем время у существующей записи
+                cursor.execute('UPDATE items SET timestamp = ? WHERE id = ?', (time.time(), row[0]))
+            else:
+                cursor.execute('''
+                    INSERT OR IGNORE INTO items (timestamp, mime_type, content_path, preview, hash)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (time.time(), mime_type, str(file_path), preview, content_hash))
+            
             conn.commit()
             conn.close()
         except Exception as e:
