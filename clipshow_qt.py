@@ -3,6 +3,9 @@
 ClipHistory Qt UI - современный дизайн как в Windows
 """
 
+import os
+os.environ['QT_QPA_PLATFORM'] = 'xcb'
+
 from PyQt5.QtWidgets import (QApplication, QWidget, QListWidget, QListWidgetItem,
                              QVBoxLayout, QHBoxLayout, QLabel, QFrame, QPushButton, 
                              QFileDialog, QSystemTrayIcon, QMenu, QAction)
@@ -49,7 +52,7 @@ class ClipboardItemWidget(QFrame):
         
         # Размеры иконок и кнопок
         self.icon_size = int(40 * self.scale)
-        self.icon_border_radius = int(6 * self.scale)        sudo ./scripts/install.sh
+        self.icon_border_radius = int(6 * self.scale)
         self.button_size = int(20 * self.scale)
         self.button_icon_size = int(14 * self.scale)
         
@@ -604,25 +607,43 @@ class ClipHistoryWindow(QWidget):
     
     def check_and_start_daemon(self):
         """Проверка и запуск демона если не запущен"""
-        try:
-            # Проверяем процесс демона
-            result = subprocess.run(
-                ['pgrep', '-f', '/usr/local/bin/cliphistory'],
-                capture_output=True,
-                timeout=1
-            )
-            
-            if result.returncode != 0:  # Демон не запущен
-                print("⚠️  Демон не запущен, запускаем...")
+        daemon_running = False
+        lock_file = Path.home() / '.cache' / 'cliphistory' / '.daemon.lock'
+        
+        if lock_file.exists():
+            try:
+                with open(lock_file) as f:
+                    pid = int(f.read().strip())
+                os.kill(pid, 0)
+                
+                # Исключаем зомби-процессы
+                is_zombie = False
+                try:
+                    with open(f"/proc/{pid}/stat", "r") as f:
+                        stat = f.read().split()
+                        if len(stat) > 2 and stat[2] == 'Z':
+                            is_zombie = True
+                except:
+                    pass
+                    
+                if not is_zombie:
+                    daemon_running = True
+            except (ProcessLookupError, ValueError, FileNotFoundError):
+                pass
+                
+        if not daemon_running:
+            print("⚠️  Демон не запущен, запускаем...")
+            try:
                 subprocess.Popen(
-                    ['cliphistory'],
+                    ['/usr/local/bin/cliphistory'],
                     stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True
                 )
                 import time
                 time.sleep(1)  # Даем время демону запуститься
-        except Exception as e:
-            print(f"Ошибка проверки демона: {e}")
+            except Exception as e:
+                print(f"Ошибка запуска демона: {e}")
     
     def acquire_lock(self):
         """Проверка что UI не запущен"""
@@ -655,9 +676,24 @@ class ClipHistoryWindow(QWidget):
         except Exception:
             pass
     
+    def get_config_path(self):
+        """Возвращает путь к пользовательскому конфигу (копируя дефолтный если нужно)"""
+        user_config_dir = Path.home() / '.config' / 'cliphistory'
+        user_config_path = user_config_dir / 'config.json'
+        system_config_path = Path(__file__).parent / 'config.json'
+        
+        if not user_config_path.exists():
+            user_config_dir.mkdir(parents=True, exist_ok=True)
+            if system_config_path.exists():
+                import shutil
+                shutil.copy2(system_config_path, user_config_path)
+            else:
+                user_config_path.write_text('{}')
+        return user_config_path
+
     def load_config(self):
         """Загрузка конфигурации"""
-        config_path = Path(__file__).parent / 'config.json'
+        config_path = self.get_config_path()
         try:
             with open(config_path) as f:
                 config = json.load(f)
@@ -1295,11 +1331,8 @@ class ClipHistoryWindow(QWidget):
             print(f"Pin error: {e}")
 
 def main():
-    # Принудительно используем X11 бэкенд для работы с xclip/xdotool
-    import os
-    os.environ['QT_QPA_PLATFORM'] = 'xcb'
-
-    # Включаем поддержку High DPI для раздельного масштабирования мониторов
+    # Возвращаем стандартное масштабирование Qt,
+    # так как теперь мы запускаем UI корректно через системный лаунчер.
     QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
     QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
     

@@ -12,8 +12,12 @@ import hashlib
 import threading
 import signal
 import sys
+import os
 from pathlib import Path
 from datetime import datetime, timedelta
+
+# Оставляем только нужный бэкенд, чтобы избежать проблем с Wayland
+os.environ['QT_QPA_PLATFORM'] = 'xcb'
 
 try:
     from PyQt5.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QAction
@@ -332,12 +336,24 @@ class HotkeyManager:
             return
         
         try:
-            ui_script = self.script_path.parent / 'clipshow_qt.py'
-            self.ui_process = subprocess.Popen(
-                ['python3', str(ui_script)],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
-            )
+            # Запускаем скрипт UI всегда напрямую, чтобы поведение
+            # не отличалось от вызова из консоли
+            if Path('/usr/local/bin/cliphistory-show').exists():
+                self.ui_process = subprocess.Popen(
+                    ['/usr/local/bin/cliphistory-show'],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True
+                )
+            else:
+                # Локальный запуск из исходников
+                ui_script = self.script_path.parent / 'clipshow_qt.py'
+                self.ui_process = subprocess.Popen(
+                    ['python3', str(ui_script)],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True
+                )
             
             if self.config.get('debug'):
                 print(f"🚀 UI запущен (PID: {self.ui_process.pid})")
@@ -636,7 +652,7 @@ class ClipHistoryDaemon:
             self.config['ui_scale'] = scale
             
             # Сохраняем в файл
-            config_path = self.script_path.parent / 'config.json'
+            config_path = self.get_config_path()
             with open(config_path, 'w') as f:
                 json.dump(self.config, f, indent=2)
             
@@ -664,9 +680,24 @@ class ClipHistoryDaemon:
             self.app.quit()
         sys.exit(0)
     
+    def get_config_path(self):
+        """Возвращает путь к пользовательскому конфигу"""
+        user_config_dir = Path.home() / '.config' / 'cliphistory'
+        user_config_path = user_config_dir / 'config.json'
+        system_config_path = self.script_path.parent / 'config.json'
+        
+        if not user_config_path.exists():
+            user_config_dir.mkdir(parents=True, exist_ok=True)
+            if system_config_path.exists():
+                import shutil
+                shutil.copy2(system_config_path, user_config_path)
+            else:
+                user_config_path.write_text('{}')
+        return user_config_path
+
     def load_config(self):
         """Загрузка конфигурации"""
-        config_path = self.script_path.parent / 'config.json'
+        config_path = self.get_config_path()
         try:
             with open(config_path) as f:
                 return json.load(f)
@@ -681,6 +712,38 @@ class ClipHistoryDaemon:
     
     def run(self):
         """Запуск демона"""
+        import os
+        lock_file = Path.home() / '.cache' / 'cliphistory' / '.daemon.lock'
+        lock_file.parent.mkdir(parents=True, exist_ok=True)
+        
+        if lock_file.exists():
+            try:
+                with open(lock_file) as f:
+                    pid = int(f.read().strip())
+                os.kill(pid, 0)
+                
+                # Проверяем, не является ли процесс зомби
+                is_zombie = False
+                try:
+                    with open(f"/proc/{pid}/stat", "r") as f:
+                        stat = f.read().split()
+                        if len(stat) > 2 and stat[2] == 'Z':
+                            is_zombie = True
+                except:
+                    pass
+                    
+                if not is_zombie:
+                    print(f"ℹ️  Демон уже запущен (PID: {pid}). Выход.")
+                    return
+                else:
+                    print(f"⚠️  Найден зомби-процесс (PID: {pid}). Перезаписываем лок-файл.")
+                    lock_file.unlink()
+            except (ProcessLookupError, ValueError):
+                lock_file.unlink()
+                
+        with open(lock_file, 'w') as f:
+            f.write(str(os.getpid()))
+            
         print("🚀 ClipHistory запущен")
         print(f"📁 Кэш: {self.clipboard_monitor.cache_dir}")
         print(f"⏱️  Проверка каждые {self.config.get('check_interval', 0.3)}s")
