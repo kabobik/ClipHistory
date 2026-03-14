@@ -146,12 +146,17 @@ class ClipboardMonitor:
             text = content.decode('utf-8', errors='ignore')
             preview = text[:200]
             
+            # Сохраняем полный текст в файл, чтобы не обрезать буфер обмена
+            file_path = self.other_dir / f"{content_hash}.txt"
+            with open(file_path, 'wb') as f:
+                f.write(content)
+            
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             cursor.execute('''
                 INSERT OR IGNORE INTO items (timestamp, mime_type, content_path, preview, hash)
-                VALUES (?, ?, NULL, ?, ?)
-            ''', (time.time(), mime_type, preview, content_hash))
+                VALUES (?, ?, ?, ?, ?)
+            ''', (time.time(), mime_type, str(file_path), preview, content_hash))
             conn.commit()
             conn.close()
         except Exception as e:

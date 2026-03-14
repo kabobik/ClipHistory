@@ -49,7 +49,7 @@ class ClipboardItemWidget(QFrame):
         
         # Размеры иконок и кнопок
         self.icon_size = int(40 * self.scale)
-        self.icon_border_radius = int(6 * self.scale)
+        self.icon_border_radius = int(6 * self.scale)        sudo ./scripts/install.sh
         self.button_size = int(20 * self.scale)
         self.button_icon_size = int(14 * self.scale)
         
@@ -711,42 +711,7 @@ class ClipHistoryWindow(QWidget):
         painter.end()
         return pixmap
     
-    def setup_tray_icon(self):
-        """Создать иконку в системном трее"""
-        if not QSystemTrayIcon.isSystemTrayAvailable():
-            return
-        
-        # Создаем иконку для трея
-        tray_icon_pixmap = self.create_svg_icon('clipboard', '#ffffff' if self.is_dark else '#000000', 64)
-        
-        self.tray_icon = QSystemTrayIcon(QIcon(tray_icon_pixmap), self)
-        self.tray_icon.setToolTip('ClipHistory - История буфера обмена')
-        
-        # Создаем меню трея
-        tray_menu = QMenu()
-        
-        show_action = QAction('Показать историю', self)
-        show_action.triggered.connect(self.show)
-        tray_menu.addAction(show_action)
-        
-        tray_menu.addSeparator()
-        
-        quit_action = QAction('Выход', self)
-        quit_action.triggered.connect(self.close)
-        tray_menu.addAction(quit_action)
-        
-        self.tray_icon.setContextMenu(tray_menu)
-        self.tray_icon.activated.connect(self.on_tray_activated)
-        self.tray_icon.show()
     
-    def on_tray_activated(self, reason):
-        """Обработка клика по иконке в трее"""
-        if reason == QSystemTrayIcon.Trigger:  # Левый клик
-            if self.isVisible():
-                self.hide()
-            else:
-                self.show()
-                self.position_near_cursor()
     
     def setup_auto_refresh(self):
         """Настроить автообновление истории"""
@@ -1009,24 +974,20 @@ class ClipHistoryWindow(QWidget):
             )
             self.prev_window_id = result.stdout.strip()
             
-            # Получаем размер экрана
-            from PyQt5.QtWidgets import QDesktopWidget
-            screen = QDesktopWidget().screenGeometry()
+            # Получаем позицию курсора через Qt
+            from PyQt5.QtGui import QCursor
+            cursor_pos = QCursor.pos()
+            cursor_x, cursor_y = cursor_pos.x(), cursor_pos.y()
+
+            # Получаем размер экрана, на котором находится курсор
+            from PyQt5.QtWidgets import QApplication
+            desktop = QApplication.desktop()
+            screen_number = desktop.screenNumber(cursor_pos)
+            screen = desktop.screenGeometry(screen_number)
             screen_width = screen.width()
             screen_height = screen.height()
-            
-            # Получаем позицию курсора
-            result = subprocess.run(
-                ['xdotool', 'getmouselocation', '--shell'],
-                capture_output=True, text=True, timeout=0.5
-            )
-            pos = {}
-            for line in result.stdout.strip().split('\n'):
-                if '=' in line:
-                    key, val = line.split('=')
-                    pos[key] = int(val)
-            
-            cursor_x, cursor_y = pos.get('X', screen_width // 2), pos.get('Y', screen_height // 2)
+            screen_x = screen.x()
+            screen_y = screen.y()
             
             margin = 20  # Отступ от края экрана и от курсора
             
@@ -1035,22 +996,22 @@ class ClipHistoryWindow(QWidget):
             y = cursor_y + margin
             
             # Проверяем правую границу - если не влезает, размещаем СЛЕВА
-            if x + self.width() > screen_width - margin:
+            if x + self.width() > screen_x + screen_width - margin:
                 x = cursor_x - self.width() - margin
             
             # Проверяем нижнюю границу - если не влезает, размещаем СВЕРХУ
-            if y + self.height() > screen_height - margin:
+            if y + self.height() > screen_y + screen_height - margin:
                 y = cursor_y - self.height() - margin
             
             # Если всё равно вылезает за границы (курсор в углу) - прижимаем к краям
-            if x < margin:
-                x = margin
-            if y < margin:
-                y = margin
-            if x + self.width() > screen_width - margin:
-                x = screen_width - self.width() - margin
-            if y + self.height() > screen_height - margin:
-                y = screen_height - self.height() - margin
+            if x < screen_x + margin:
+                x = screen_x + margin
+            if y < screen_y + margin:
+                y = screen_y + margin
+            if x + self.width() > screen_x + screen_width - margin:
+                x = screen_x + screen_width - self.width() - margin
+            if y + self.height() > screen_y + screen_height - margin:
+                y = screen_y + screen_height - self.height() - margin
             
             self.move(x, y)
         except Exception:
@@ -1334,6 +1295,10 @@ class ClipHistoryWindow(QWidget):
             print(f"Pin error: {e}")
 
 def main():
+    # Принудительно используем X11 бэкенд для работы с xclip/xdotool
+    import os
+    os.environ['QT_QPA_PLATFORM'] = 'xcb'
+
     # Включаем поддержку High DPI для раздельного масштабирования мониторов
     QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
     QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
