@@ -316,8 +316,24 @@ class HotkeyManager:
             # Проверяем существование процесса
             import os
             os.kill(pid, 0)
-            return True  # Процесс существует и окно открыто
-        except (ProcessLookupError, ValueError, FileNotFoundError):
+            
+            # Проверяем реальное имя процесса, чтобы исключить переиспользование PID
+            try:
+                with open(f"/proc/{pid}/cmdline", "r") as cmdf:
+                    cmd = cmdf.read().replace('\x00', ' ')
+                    if 'cliphistory' in cmd or 'python' in cmd or 'clipshow' in cmd:
+                        return True
+            except:
+                pass
+                
+            # Если имя не совпало (PID переиспользован)
+            try:
+                lock_file.unlink()
+            except:
+                pass
+            return False
+
+        except (ProcessLookupError, ValueError, FileNotFoundError, PermissionError):
             # Процесс не существует или файл битый - окно закрыто
             try:
                 lock_file.unlink()
@@ -745,23 +761,27 @@ class ClipHistoryDaemon:
                     pid = int(f.read().strip())
                 os.kill(pid, 0)
                 
-                # Проверяем, не является ли процесс зомби
-                is_zombie = False
+                # Проверяем, существует ли процесс и является ли он демоном или зомби
+                is_valid_daemon = False
                 try:
                     with open(f"/proc/{pid}/stat", "r") as f:
                         stat = f.read().split()
-                        if len(stat) > 2 and stat[2] == 'Z':
-                            is_zombie = True
+                        if len(stat) > 2 and stat[2] != 'Z':
+                            # Проверяем cmdline
+                            with open(f"/proc/{pid}/cmdline", "r") as cmdf:
+                                cmd = cmdf.read().replace('\x00', ' ')
+                                if 'cliphistory' in cmd or 'python' in cmd:
+                                    is_valid_daemon = True
                 except:
                     pass
                     
-                if not is_zombie:
+                if is_valid_daemon:
                     print(f"ℹ️  Демон уже запущен (PID: {pid}). Выход.")
                     return
                 else:
-                    print(f"⚠️  Найден зомби-процесс (PID: {pid}). Перезаписываем лок-файл.")
+                    print(f"⚠️  Процесс не найден или PID переиспользован (PID: {pid}). Перезаписываем лок-файл.")
                     lock_file.unlink()
-            except (ProcessLookupError, ValueError):
+            except (ProcessLookupError, ValueError, PermissionError):
                 lock_file.unlink()
                 
         with open(lock_file, 'w') as f:

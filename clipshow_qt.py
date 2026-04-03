@@ -656,8 +656,23 @@ class ClipHistoryWindow(QWidget):
                         pid = int(f.read().strip())
                     # Проверяем существование процесса
                     os.kill(pid, 0)
-                    return False  # Процесс существует
-                except (ProcessLookupError, ValueError):
+                    
+                    # Проверяем имя процесса, чтобы избежать переиспользования PID
+                    is_valid_ui = False
+                    try:
+                        with open(f"/proc/{pid}/cmdline", "r") as cmdf:
+                            cmd = cmdf.read().replace('\x00', ' ')
+                            if 'cliphistory' in cmd or 'python' in cmd or 'clipshow' in cmd:
+                                is_valid_ui = True
+                    except:
+                        pass
+                        
+                    if is_valid_ui:
+                        return False  # Процесс существует и это наш UI
+                    else:
+                        # PID переиспользован, удаляем lock
+                        self.lock_file.unlink()
+                except (ProcessLookupError, ValueError, PermissionError):
                     # Процесс не существует, удаляем старый lock
                     self.lock_file.unlink()
             
