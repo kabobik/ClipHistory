@@ -763,15 +763,19 @@ class ClipHistoryDaemon:
                 
                 # Проверяем, существует ли процесс и является ли он демоном или зомби
                 is_valid_daemon = False
+                is_stopped = False
                 try:
                     with open(f"/proc/{pid}/stat", "r") as f:
                         stat = f.read().split()
-                        if len(stat) > 2 and stat[2] != 'Z':
+                        # Z - zombie, T - stopped (например, по Ctrl+Z)
+                        if len(stat) > 2 and stat[2] not in ('Z', 'T', 't'):
                             # Проверяем cmdline
                             with open(f"/proc/{pid}/cmdline", "r") as cmdf:
                                 cmd = cmdf.read().replace('\x00', ' ')
                                 if 'cliphistory' in cmd or 'python' in cmd:
                                     is_valid_daemon = True
+                        elif len(stat) > 2 and stat[2] in ('T', 't'):
+                            is_stopped = True
                 except:
                     pass
                     
@@ -779,7 +783,14 @@ class ClipHistoryDaemon:
                     print(f"ℹ️  Демон уже запущен (PID: {pid}). Выход.")
                     return
                 else:
-                    print(f"⚠️  Процесс не найден или PID переиспользован (PID: {pid}). Перезаписываем лок-файл.")
+                    if is_stopped:
+                        print(f"⚠️  Найден зависший/остановленный процесс (PID: {pid}). Убиваем и перезаписываем лок-файл.")
+                        try:
+                            os.kill(pid, 9)
+                        except:
+                            pass
+                    else:
+                        print(f"⚠️  Процесс не найден или PID переиспользован (PID: {pid}). Перезаписываем лок-файл.")
                     lock_file.unlink()
             except (ProcessLookupError, ValueError, PermissionError):
                 lock_file.unlink()
