@@ -28,9 +28,11 @@
 ### Из .deb пакета (рекомендуется)
 
 ```bash
-sudo dpkg -i cliphistory_1.0.0_all.deb
+VERSION=$(cat VERSION)
+sudo dpkg -i "cliphistory_${VERSION}_all.deb"
 sudo apt-get install -f
 ```
+Имя файла пакета содержит версию из `VERSION`.
 
 ### Из исходников
 

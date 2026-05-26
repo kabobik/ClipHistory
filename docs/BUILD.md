@@ -10,11 +10,11 @@
 ./build-deb.sh
 ```
 
-Будет создан файл `cliphistory_1.0.0_all.deb`
+Будет создан файл `cliphistory_<version>_all.deb`, где `<version>` берется из `VERSION`.
 
 **Установка:**
 ```bash
-sudo dpkg -i cliphistory_1.0.0_all.deb
+sudo dpkg -i cliphistory_<version>_all.deb
 sudo apt-get install -f  # установка зависимостей
 ```
 
@@ -38,18 +38,18 @@ sudo apt remove cliphistory
 ./build-tarball.sh
 ```
 
-Будет создан файл `cliphistory-1.0.0.tar.gz` + контрольная сумма
+Будет создан файл `cliphistory-<version>.tar.gz` + контрольная сумма
 
 **Установка:**
 ```bash
-tar -xzf cliphistory-1.0.0.tar.gz
-cd cliphistory-1.0.0
+tar -xzf cliphistory-<version>.tar.gz
+cd cliphistory-<version>
 sudo ./install.sh
 ```
 
 **Удаление:**
 ```bash
-cd cliphistory-1.0.0
+cd cliphistory-<version>
 sudo ./uninstall.sh
 ```
 
@@ -62,10 +62,11 @@ sudo ./uninstall.sh
 ## Структура .deb пакета
 
 ```
-cliphistory_1.0.0_all.deb
+cliphistory_<version>_all.deb
 ├── opt/cliphistory/              # Файлы приложения
 │   ├── cliphistory_new.py       # Демон
 │   ├── clipshow_qt.py           # UI
+│   ├── VERSION                  # Версия сборки
 │   └── config.json              # Конфигурация
 ├── usr/local/bin/               # Команды (symlinks)
 │   ├── cliphistory -> /opt/cliphistory/cliphistory_new.py
@@ -87,8 +88,8 @@ cliphistory_1.0.0_all.deb
 ## Структура .tar.gz архива
 
 ```
-cliphistory-1.0.0.tar.gz
-└── cliphistory-1.0.0/
+cliphistory-<version>.tar.gz
+└── cliphistory-<version>/
     ├── cliphistory_new.py       # Демон
     ├── clipshow_qt.py           # UI
     ├── config.json              # Конфигурация
@@ -102,15 +103,13 @@ cliphistory-1.0.0.tar.gz
 
 ## Изменение версии
 
-Отредактируйте переменную `VERSION` в начале скриптов:
+Версия хранится в корневом файле `VERSION`. Оба сборочных скрипта читают ее оттуда:
 
 ```bash
-# В build-deb.sh
-VERSION="1.0.0"
-
-# В build-tarball.sh
-VERSION="1.0.0"
+cat VERSION
 ```
+
+При сборке эта версия попадает в имя архива/пакета, metadata `.deb` и файл `VERSION` внутри собранного пакета.
 
 ## Требования для сборки
 
@@ -131,14 +130,15 @@ tar, gzip, sha256sum
 
 1. Создайте tag:
 ```bash
-git tag -a v1.0.0 -m "Release version 1.0.0"
-git push origin v1.0.0
+VERSION=$(cat VERSION)
+git tag -a "v${VERSION}" -m "Release version ${VERSION}"
+git push origin "v${VERSION}"
 ```
 
 2. Загрузите файлы в GitHub Releases:
-   - `cliphistory_1.0.0_all.deb`
-   - `cliphistory-1.0.0.tar.gz`
-   - `cliphistory-1.0.0.tar.gz.sha256`
+   - `cliphistory_<version>_all.deb`
+   - `cliphistory-<version>.tar.gz`
+   - `cliphistory-<version>.tar.gz.sha256`
 
 ### PPA (для Ubuntu):
 
@@ -151,7 +151,7 @@ git push origin v1.0.0
 Создайте PKGBUILD файл:
 ```bash
 pkgname=cliphistory
-pkgver=1.0.0
+pkgver=<version>
 pkgrel=1
 pkgdesc="Менеджер истории буфера обмена"
 arch=('any')
@@ -175,7 +175,7 @@ package() {
 ### Тест .deb пакета:
 ```bash
 # Установка
-sudo dpkg -i cliphistory_1.0.0_all.deb
+sudo dpkg -i cliphistory_<version>_all.deb
 sudo apt-get install -f
 
 # Проверка файлов
@@ -195,11 +195,11 @@ dpkg -l | grep cliphistory  # Должно быть пусто
 ### Тест .tar.gz архива:
 ```bash
 # Распаковка
-tar -xzf cliphistory-1.0.0.tar.gz
-cd cliphistory-1.0.0
+tar -xzf cliphistory-<version>.tar.gz
+cd cliphistory-<version>
 
 # Проверка контрольной суммы
-sha256sum -c ../cliphistory-1.0.0.tar.gz.sha256
+sha256sum -c ../cliphistory-<version>.tar.gz.sha256
 
 # Установка
 sudo ./install.sh

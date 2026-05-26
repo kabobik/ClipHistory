@@ -28,6 +28,7 @@ mkdir -p "$BUILD_DIR/DEBIAN"
 echo "📋 Копирование файлов..."
 cp cliphistory_new.py "$BUILD_DIR/opt/cliphistory/"
 cp clipshow_qt.py "$BUILD_DIR/opt/cliphistory/"
+cp VERSION "$BUILD_DIR/opt/cliphistory/"
 # Больше не копируем config.json в /opt, он будет создаваться в ~/.config
 cp config.json "$BUILD_DIR/opt/cliphistory/" # Оставим как дефолтный шаблон
 chmod +x "$BUILD_DIR/opt/cliphistory/cliphistory_new.py"
