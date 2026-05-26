@@ -214,16 +214,14 @@ sudo ./uninstall.sh
 
 ## CI/CD автоматизация
 
-В репозитории есть workflow `.github/workflows/build-deb.yml`. Он запускается вручную или при каждом push в `master`/`main`, если изменились файлы, влияющие на пакеты:
+В репозитории есть workflow `.github/workflows/build-deb.yml`. Он запускается вручную или при каждом push в `master`/`main`.
 
-- `VERSION`
-- `cliphistory_new.py`
-- `clipshow_qt.py`
-- `config.json`
-- `scripts/build-deb.sh`
-- `scripts/build-tarball.sh`
+Workflow собирает `cliphistory_<version>_all.deb`, `cliphistory-<version>.tar.gz` и checksum-файл, проверяет версию через `dpkg-deb`/`sha256sum`, затем публикует их как GitHub Actions artifacts. При push в `master`/`main` эти же файлы прикрепляются к GitHub Release `v<version>`, где `<version>` берется из `VERSION`.
 
-Workflow собирает `cliphistory_<version>_all.deb`, `cliphistory-<version>.tar.gz` и checksum-файл, проверяет версию через `dpkg-deb`/`sha256sum`, затем публикует их как GitHub Actions artifacts. В git при этом попадают только исходники и workflow, а собранные пакеты доступны в конкретном запуске Actions.
+В git при этом попадают только исходники и workflow. Собранные пакеты доступны в двух местах:
+
+- `Actions` -> конкретный workflow run -> `Artifacts`
+- `Releases` -> `ClipHistory v<version>` -> release assets
 
 ### Запуск из VS Code
 
@@ -236,7 +234,7 @@ Workflow собирает `cliphistory_<version>_all.deb`, `cliphistory-<version
 
 Workflow можно запускать вручную благодаря `workflow_dispatch` в `.github/workflows/build-deb.yml`.
 
-После завершения запуска скачайте пакеты в блоке `Artifacts` на странице workflow run.
+После ручного запуска скачайте пакеты в блоке `Artifacts` на странице workflow run. При обычном push пакеты также будут доступны в разделе `Releases`.
 
 ## Changelog
 
