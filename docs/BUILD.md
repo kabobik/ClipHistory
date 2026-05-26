@@ -214,15 +214,16 @@ sudo ./uninstall.sh
 
 ## CI/CD автоматизация
 
-В репозитории есть workflow `.github/workflows/build-deb.yml`. Он запускается вручную или при изменении файлов, влияющих на `.deb` пакет:
+В репозитории есть workflow `.github/workflows/build-deb.yml`. Он запускается вручную или при каждом push в `master`/`main`, если изменились файлы, влияющие на пакеты:
 
 - `VERSION`
 - `cliphistory_new.py`
 - `clipshow_qt.py`
 - `config.json`
 - `scripts/build-deb.sh`
+- `scripts/build-tarball.sh`
 
-Workflow собирает `cliphistory_<version>_all.deb`, проверяет версию пакета через `dpkg-deb` и коммитит собранный пакет обратно в git. Для работы в настройках GitHub Actions должны быть разрешены права `Read and write permissions` для `GITHUB_TOKEN`.
+Workflow собирает `cliphistory_<version>_all.deb`, `cliphistory-<version>.tar.gz` и checksum-файл, проверяет версию через `dpkg-deb`/`sha256sum`, затем публикует их как GitHub Actions artifacts. В git при этом попадают только исходники и workflow, а собранные пакеты доступны в конкретном запуске Actions.
 
 ### Запуск из VS Code
 
@@ -230,10 +231,12 @@ Workflow собирает `cliphistory_<version>_all.deb`, проверяет в
 
 1. Откройте боковую панель GitHub Actions.
 2. Выберите репозиторий `kabobik/ClipHistory`.
-3. Откройте workflow `Build deb package`.
+3. Откройте workflow `Build release packages`.
 4. Нажмите `Run Workflow` и выберите ветку `master`.
 
 Workflow можно запускать вручную благодаря `workflow_dispatch` в `.github/workflows/build-deb.yml`.
+
+После завершения запуска скачайте пакеты в блоке `Artifacts` на странице workflow run.
 
 ## Changelog
 

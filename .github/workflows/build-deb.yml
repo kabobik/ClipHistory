@@ -1,4 +1,4 @@
-name: Build deb package
+name: Build release packages
 
 on:
   workflow_dispatch:
@@ -12,49 +12,59 @@ on:
       - clipshow_qt.py
       - config.json
       - scripts/build-deb.sh
+      - scripts/build-tarball.sh
       - .github/workflows/build-deb.yml
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
-  group: build-deb-${{ github.ref }}
+  group: build-release-packages-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build-and-commit:
+  build:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Build deb package
         run: bash scripts/build-deb.sh
 
+      - name: Build tarball package
+        run: bash scripts/build-tarball.sh
+
       - name: Verify package version
         run: |
           version="$(tr -d '\n\r' < VERSION)"
-          package="cliphistory_${version}_all.deb"
-          test -f "$package"
-          test "$(dpkg-deb -f "$package" Version)" = "$version"
-          dpkg-deb -c "$package" | grep -q './opt/cliphistory/VERSION'
+          deb_package="cliphistory_${version}_all.deb"
+          tar_package="cliphistory-${version}.tar.gz"
 
-      - name: Commit built package
+          test -f "$deb_package"
+          test -f "$tar_package"
+          test -f "${tar_package}.sha256"
+
+          test "$(dpkg-deb -f "$deb_package" Version)" = "$version"
+          dpkg-deb -c "$deb_package" | grep -q './opt/cliphistory/VERSION'
+          sha256sum -c "${tar_package}.sha256"
+
+      - name: Upload release packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: cliphistory-packages-${{ github.sha }}
+          path: |
+            cliphistory_*_all.deb
+            cliphistory-*.tar.gz
+            cliphistory-*.tar.gz.sha256
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Print package names
         run: |
           version="$(tr -d '\n\r' < VERSION)"
-          package="cliphistory_${version}_all.deb"
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -f "$package"
-
-          if git diff --cached --quiet; then
-            echo "Package is already up to date."
-            exit 0
-          fi
-
-          git commit -m "Build ClipHistory ${version} deb package [skip ci]"
-          git push
+          echo "Built packages:"
+          echo "cliphistory_${version}_all.deb"
+          echo "cliphistory-${version}.tar.gz"
+          echo "cliphistory-${version}.tar.gz.sha256"

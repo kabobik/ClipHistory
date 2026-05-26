@@ -17,7 +17,6 @@ dist/
 # Сборка
 build/
 *.deb
-!cliphistory_*_all.deb
 *.tar.gz
 *.tar.gz.sha256
 
