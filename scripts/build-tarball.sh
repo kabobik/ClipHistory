@@ -51,7 +51,7 @@ sudo ./install.sh
 
 ЗАВИСИМОСТИ (Debian/Ubuntu/Mint):
 ----------------------------------
-sudo apt install python3 python3-pyqt5 python3-pyqt5.qtsvg xclip xdotool
+sudo apt install python3 python3-pyqt5 python3-pyqt5.qtsvg xclip xdotool wl-clipboard
 
 НАСТРОЙКА ГОРЯЧЕЙ КЛАВИШИ:
 --------------------------

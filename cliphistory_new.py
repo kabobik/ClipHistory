@@ -13,11 +13,13 @@ import threading
 import signal
 import sys
 import os
+import shutil
 from pathlib import Path
 from datetime import datetime, timedelta
 
-# Оставляем только нужный бэкенд, чтобы избежать проблем с Wayland
-os.environ['QT_QPA_PLATFORM'] = 'xcb'
+# Трей и глобальная горячая клавиша пока используют X11/XWayland, но clipboard на
+# Wayland читается отдельным backend через wl-clipboard.
+os.environ.setdefault('QT_QPA_PLATFORM', 'xcb')
 
 try:
     from PyQt5.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QAction
@@ -50,6 +52,8 @@ class ClipboardMonitor:
     
     def __init__(self, config):
         self.config = config
+        self.clipboard_timeout = float(self.config.get('clipboard_timeout', 0.35))
+        self.backend = self.detect_backend()
         self.cache_dir = Path.home() / '.cache' / 'cliphistory'
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         
@@ -62,6 +66,25 @@ class ClipboardMonitor:
         self.db_path = self.cache_dir / 'history.db'
         self.last_content_hash = None
         self.init_db()
+
+        if self.config.get('debug'):
+            print(f"📋 Clipboard backend: {self.backend}")
+
+    def detect_backend(self):
+        """Выбрать backend буфера обмена для текущей сессии."""
+        session_type = os.environ.get('XDG_SESSION_TYPE', '').lower()
+        is_wayland = session_type == 'wayland' or bool(os.environ.get('WAYLAND_DISPLAY'))
+
+        if is_wayland and shutil.which('wl-paste'):
+            return 'wayland'
+
+        if shutil.which('xclip'):
+            return 'x11'
+
+        if shutil.which('wl-paste'):
+            return 'wayland'
+
+        return 'none'
     
     def init_db(self):
         """Инициализация БД с миграцией"""
@@ -92,12 +115,60 @@ class ClipboardMonitor:
     
     def get_clipboard(self):
         """Получить содержимое буфера обмена с определением MIME"""
+        if self.backend == 'wayland':
+            return self.get_clipboard_wayland()
+        if self.backend == 'x11':
+            return self.get_clipboard_x11()
+        return None, None
+
+    def get_clipboard_wayland(self):
+        """Получить содержимое буфера обмена через wl-clipboard."""
+        try:
+            result = subprocess.run(
+                ['wl-paste', '--list-types'],
+                capture_output=True, text=True, timeout=self.clipboard_timeout
+            )
+            if result.returncode != 0:
+                return None, None
+
+            available_types = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+            mime_type = None
+            for preferred in MIME_PRIORITY:
+                if preferred in available_types:
+                    mime_type = preferred
+                    break
+
+            if not mime_type and available_types:
+                mime_type = available_types[0]
+
+            if not mime_type:
+                return None, None
+
+            result = subprocess.run(
+                ['wl-paste', '--type', mime_type],
+                capture_output=True, timeout=self.clipboard_timeout
+            )
+            if result.returncode != 0:
+                return None, None
+
+            return mime_type, result.stdout
+        except Exception as e:
+            if self.config.get('debug'):
+                print(f"Ошибка чтения clipboard через wl-paste: {e}")
+            return None, None
+
+    def get_clipboard_x11(self):
+        """Получить содержимое буфера обмена через xclip."""
         try:
             result = subprocess.run(
                 ['xclip', '-selection', 'clipboard', '-t', 'TARGETS', '-o'],
-                capture_output=True, text=True, timeout=1
+                capture_output=True, text=True, timeout=self.clipboard_timeout
             )
-            available_types = result.stdout.strip().split('\n')
+            if result.returncode != 0:
+                return None, None
+
+            available_types = [line.strip() for line in result.stdout.splitlines() if line.strip()]
             
             # Выбираем лучший MIME тип
             mime_type = None
@@ -115,13 +186,15 @@ class ClipboardMonitor:
             # Получаем контент
             result = subprocess.run(
                 ['xclip', '-selection', 'clipboard', '-t', mime_type, '-o'],
-                capture_output=True, timeout=1
+                capture_output=True, timeout=self.clipboard_timeout
             )
+            if result.returncode != 0:
+                return None, None
             
             return mime_type, result.stdout
         except Exception as e:
             if self.config.get('debug'):
-                print(f"Ошибка чтения clipboard: {e}")
+                print(f"Ошибка чтения clipboard через xclip: {e}")
             return None, None
     
     def save_to_history(self, mime_type, content):
@@ -743,6 +816,7 @@ class ClipHistoryDaemon:
         except Exception:
             return {
                 'check_interval': 0.3,
+                'clipboard_timeout': 0.35,
                 'cleanup_days': 7,
                 'auto_paste': True,
                 'hotkey': 'Super+V',

@@ -89,7 +89,7 @@ Version: ${VERSION}
 Section: utils
 Priority: optional
 Architecture: ${ARCH}
-Depends: python3 (>= 3.6), python3-pyqt5, python3-pyqt5.qtsvg, xclip, xdotool
+Depends: python3 (>= 3.6), python3-pyqt5, python3-pyqt5.qtsvg, xclip, xdotool, wl-clipboard
 Maintainer: Anton <anton@example.com>
 Description: Менеджер истории буфера обмена
  ClipHistory - современный менеджер истории буфера обмена для Linux.

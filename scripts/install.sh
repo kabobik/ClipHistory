@@ -40,6 +40,10 @@ if ! command -v xclip &> /dev/null; then
     MISSING_DEPS+=("xclip")
 fi
 
+if ! command -v wl-paste &> /dev/null || ! command -v wl-copy &> /dev/null; then
+    MISSING_DEPS+=("wl-clipboard")
+fi
+
 if ! command -v xdotool &> /dev/null; then
     MISSING_DEPS+=("xdotool")
 fi
@@ -84,6 +88,11 @@ fi
 
 if ! command -v xclip &> /dev/null; then
     echo "❌ xclip не установлен"
+    DEPS_OK=false
+fi
+
+if ! command -v wl-paste &> /dev/null || ! command -v wl-copy &> /dev/null; then
+    echo "❌ wl-clipboard не установлен"
     DEPS_OK=false
 fi
 

@@ -1126,10 +1126,19 @@ class ClipHistoryWindow(QWidget):
             content = preview.encode('utf-8')
         
         try:
-            subprocess.run(
-                ['xclip', '-selection', 'clipboard', '-t', mime_type],
-                input=content, timeout=1.0, stderr=subprocess.DEVNULL
-            )
+            session_type = os.environ.get('XDG_SESSION_TYPE', '').lower()
+            is_wayland = session_type == 'wayland' or bool(os.environ.get('WAYLAND_DISPLAY'))
+
+            if is_wayland and shutil.which('wl-copy'):
+                subprocess.run(
+                    ['wl-copy', '--type', mime_type],
+                    input=content, timeout=1.0, stderr=subprocess.DEVNULL
+                )
+            else:
+                subprocess.run(
+                    ['xclip', '-selection', 'clipboard', '-t', mime_type],
+                    input=content, timeout=1.0, stderr=subprocess.DEVNULL
+                )
         except Exception:
             pass
     

@@ -157,7 +157,7 @@ pkgdesc="Менеджер истории буфера обмена"
 arch=('any')
 url="https://github.com/yourusername/cliphistory"
 license=('MIT')
-depends=('python' 'python-pyqt5' 'xclip' 'xdotool')
+depends=('python' 'python-pyqt5' 'xclip' 'xdotool' 'wl-clipboard')
 source=("${pkgname}-${pkgver}.tar.gz::${url}/archive/v${pkgver}.tar.gz")
 sha256sums=('...')
 

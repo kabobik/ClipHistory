@@ -3,6 +3,7 @@
   "max_image_items": 10,
   "max_other_items": 20,
   "check_interval": 0.3,
+  "clipboard_timeout": 0.35,
   "cleanup_days": 7,
   "hotkey": "Super+V",
   "auto_paste": true,

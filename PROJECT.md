@@ -22,6 +22,9 @@ cliphistory/
 │   ├── INSTALL.md          # Инструкция по установке
 │   └── BUILD.md            # Инструкция по сборке
 │
+├── tests/
+│   └── manual/             # Ручные диагностические скрипты
+│
 └── archive/                 # Старые версии
     ├── clipshow.py         # Версия с Rofi
     └── clipshow_gtk.py     # Версия с GTK

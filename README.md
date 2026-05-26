@@ -45,7 +45,7 @@ sudo ./install.sh
 
 **Debian/Ubuntu/Linux Mint:**
 ```bash
-sudo apt install python3 python3-pyqt5 python3-pyqt5.qtsvg xclip xdotool
+sudo apt install python3 python3-pyqt5 python3-pyqt5.qtsvg xclip xdotool wl-clipboard
 ```
 
 ## ⚙️ Настройка горячей клавиши
@@ -86,6 +86,7 @@ cliphistory-show    # Показать историю буфера
 ```json
 {
     "check_interval": 0.3,      // Интервал проверки буфера (сек)
+    "clipboard_timeout": 0.35,  // Таймаут чтения clipboard (сек)
     "cleanup_days": 7,           // Удаление истории старше N дней
     "auto_paste": true,          // Автовставка при выборе
     "debug": false,              // Режим отладки
@@ -146,6 +147,13 @@ rm -f ~/.cache/cliphistory/.ui.lock
 **Горячая клавиша не работает:**
 Используйте полный путь: `/usr/local/bin/cliphistory-show`
 
+**KDE Plasma / Wayland медленно видит новые копии:**
+Установите `wl-clipboard`; на Wayland мониторинг использует `wl-paste`, а восстановление выбранного элемента - `wl-copy`.
+
+```bash
+sudo apt install wl-clipboard
+```
+
 ## 📝 История изменений
 
 **v1.0.0** (2026-01-05)
@@ -164,7 +172,7 @@ MIT License - см. [LICENSE](LICENSE)
 ## 🙏 Благодарности
 
 - PyQt5 за UI фреймворк
-- xclip и xdotool за работу с буфером обмена
+- xclip, wl-clipboard и xdotool за работу с буфером обмена
 - Сообществу Linux за вдохновение
 
 ---

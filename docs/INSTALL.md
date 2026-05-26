@@ -17,17 +17,17 @@ sudo ./install.sh
 
 ### Ubuntu/Debian/Mint:
 ```bash
-sudo apt install python3 python3-pyqt5 python3-pyqt5.qtsvg xclip xdotool
+sudo apt install python3 python3-pyqt5 python3-pyqt5.qtsvg xclip xdotool wl-clipboard
 ```
 
 ### Fedora:
 ```bash
-sudo dnf install python3 python3-qt5 xclip xdotool
+sudo dnf install python3 python3-qt5 xclip xdotool wl-clipboard
 ```
 
 ### Arch:
 ```bash
-sudo pacman -S python python-pyqt5 xclip xdotool
+sudo pacman -S python python-pyqt5 xclip xdotool wl-clipboard
 ```
 
 ## Настройка горячей клавиши
@@ -116,6 +116,7 @@ sudo ./uninstall.sh
 ```json
 {
     "check_interval": 0.3,         // Интервал проверки буфера (сек)
+    "clipboard_timeout": 0.35,     // Таймаут чтения clipboard (сек)
     "cleanup_days": 7,              // Очистка истории старше N дней
     "auto_paste": true,             // Автовставка при выборе
     "hotkey": "Super+V",            // Отображение в UI
@@ -129,6 +130,23 @@ sudo ./uninstall.sh
 ```
 
 ## Решение проблем
+
+### KDE Plasma / Wayland:
+На Wayland мониторинг буфера обмена использует `wl-paste` из пакета `wl-clipboard`. Если новые копии не появляются в истории:
+
+```bash
+echo $XDG_SESSION_TYPE
+which wl-paste wl-copy
+wl-paste --list-types
+```
+
+Установите backend:
+
+```bash
+sudo apt install wl-clipboard
+```
+
+Автовставка через `xdotool` может быть ограничена Wayland compositor-ом. История буфера и восстановление выбранного элемента в clipboard работают через `wl-paste`/`wl-copy`, но синтетическое нажатие `Ctrl+V` в чужое окно на Wayland может не сработать без отдельного инструмента ввода.
 
 ### Демон не запускается:
 ```bash
