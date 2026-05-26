@@ -214,41 +214,15 @@ sudo ./uninstall.sh
 
 ## CI/CD автоматизация
 
-Пример GitHub Actions (`.github/workflows/build.yml`):
+В репозитории есть workflow `.github/workflows/build-deb.yml`. Он запускается вручную или при изменении файлов, влияющих на `.deb` пакет:
 
-```yaml
-name: Build Packages
+- `VERSION`
+- `cliphistory_new.py`
+- `clipshow_qt.py`
+- `config.json`
+- `scripts/build-deb.sh`
 
-on:
-  push:
-    tags:
-      - 'v*'
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      
-      - name: Install dependencies
-        run: sudo apt install dpkg-dev
-      
-      - name: Build .deb package
-        run: ./build-deb.sh
-      
-      - name: Build .tar.gz archive
-        run: ./build-tarball.sh
-      
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
-        with:
-          files: |
-            cliphistory_*.deb
-            cliphistory-*.tar.gz
-            cliphistory-*.tar.gz.sha256
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-```
+Workflow собирает `cliphistory_<version>_all.deb`, проверяет версию пакета через `dpkg-deb` и коммитит собранный пакет обратно в git. Для работы в настройках GitHub Actions должны быть разрешены права `Read and write permissions` для `GITHUB_TOKEN`.
 
 ## Changelog
 
