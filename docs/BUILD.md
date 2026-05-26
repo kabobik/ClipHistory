@@ -224,6 +224,17 @@ sudo ./uninstall.sh
 
 Workflow собирает `cliphistory_<version>_all.deb`, проверяет версию пакета через `dpkg-deb` и коммитит собранный пакет обратно в git. Для работы в настройках GitHub Actions должны быть разрешены права `Read and write permissions` для `GITHUB_TOKEN`.
 
+### Запуск из VS Code
+
+В проект добавлена рекомендация расширения `GitHub Actions` (`github.vscode-github-actions`). После установки расширения:
+
+1. Откройте боковую панель GitHub Actions.
+2. Выберите репозиторий `kabobik/ClipHistory`.
+3. Откройте workflow `Build deb package`.
+4. Нажмите `Run Workflow` и выберите ветку `master`.
+
+Workflow можно запускать вручную благодаря `workflow_dispatch` в `.github/workflows/build-deb.yml`.
+
 ## Changelog
 
 Ведите CHANGELOG.md для отслеживания изменений:
